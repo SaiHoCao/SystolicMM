@@ -1218,7 +1218,7 @@ class FPMAC2(val useHalf: Boolean = false) extends Module {
   io.valid_out := valid_out_reg
 }
 
-class FPMACs2(val useHalf: Boolean = false) extends Module {
+class FPMAC_5S(val useHalf: Boolean = false) extends Module {
   // 参数化配置
   val TOTAL_WIDTH = if (useHalf) 16 else 32
   val EXP_WIDTH = if (useHalf) 5 else 8
@@ -1298,11 +1298,8 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
     stage1.valid := false.B
   }
 
-  // Stage2: 乘法归一化
+  // Stage2: 乘法归一化输出
   val stage2 = Reg(new Bundle {
-    val mul_sign = Bool()
-    val mul_exp = UInt(EXP_WIDTH.W)
-    val mul_mant = UInt(MANT_WIDTH.W)
     val mul_out = UInt(TOTAL_WIDTH.W)
     val psum = UInt(TOTAL_WIDTH.W)
     val valid = Bool()
@@ -1322,67 +1319,74 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
       normalized_mant := 0.U
       printf(p"[Stage2-归一化] 尾数为0，结果为0\n")
     }.otherwise {
-      val res_mant = stage1.mul_mant
-      val res_exp = stage1.mul_exp
-      when(res_mant(MUL_WIDTH - 1) === 1.U) {
-        normalized_mant := res_mant << 1
-        normalized_exp := res_exp + 1.U
-        printf(p"[Stage2-归一化] 左移1位，指数+1=${res_exp + 1.U}\n")
-      }.elsewhen(res_mant(MUL_WIDTH - 2) === 1.U) {
-        normalized_mant := res_mant << 2
-        normalized_exp := res_exp
-        printf(p"[Stage2-归一化] 左移2位，指数不变=${res_exp}\n")
-      }.elsewhen(res_mant(MUL_WIDTH - 3) === 1.U) {
-        normalized_mant := res_mant << 3
-        normalized_exp := res_exp - 1.U
-        printf(p"[Stage2-归一化] 左移3位，指数-1=${res_exp - 1.U}\n")
-      }.elsewhen(res_mant(MUL_WIDTH - 4) === 1.U) {
-        normalized_mant := res_mant << 4
-        normalized_exp := res_exp - 2.U
-        printf(p"[Stage2-归一化] 左移4位，指数-2=${res_exp - 2.U}\n")
-      }.elsewhen(res_mant(MUL_WIDTH - 5) === 1.U) {
-        normalized_mant := res_mant << 5
-        normalized_exp := res_exp - 3.U
-        printf(p"[Stage2-归一化] 左移5位，指数-3=${res_exp - 3.U}\n")
-      }.elsewhen(res_mant(MUL_WIDTH - 6) === 1.U) {
-        normalized_mant := res_mant << 6
-        normalized_exp := res_exp - 4.U
-        printf(p"[Stage2-归一化] 左移6位，指数-4=${res_exp - 4.U}\n")
-      }.elsewhen(res_mant(MUL_WIDTH - 7) === 1.U) {
-        normalized_mant := res_mant << 7
-        normalized_exp := res_exp - 5.U
-        printf(p"[Stage2-归一化] 左移7位，指数-5=${res_exp - 5.U}\n")
-      }.elsewhen(res_mant(MUL_WIDTH - 8) === 1.U) {
-        normalized_mant := res_mant << 8
-        normalized_exp := res_exp - 6.U
-        printf(p"[Stage2-归一化] 左移8位，指数-6=${res_exp - 6.U}\n")
-      }.elsewhen(res_mant(MUL_WIDTH - 9) === 1.U) {
-        normalized_mant := res_mant << 9
-        normalized_exp := res_exp - 7.U
-        printf(p"[Stage2-归一化] 左移9位，指数-7=${res_exp - 7.U}\n")
-      }.elsewhen(res_mant(MUL_WIDTH - 10) === 0.U) {
-        normalized_mant := res_mant << 10
-        normalized_exp := res_exp - 8.U
-        printf(p"[Stage2-归一化] 左移10位，指数-8=${res_exp - 8.U}\n")
-      }.otherwise {
-        normalized_mant := res_mant
-        normalized_exp := res_exp
-        printf(p"[Stage2-归一化] 无需左移，指数不变=${res_exp}\n")
-      }
+      // val res_mant = stage1.mul_mant
+      // val res_exp = stage1.mul_exp
+      // when(res_mant(MUL_WIDTH - 1) === 1.U) {
+      //   normalized_mant := res_mant << 1
+      //   normalized_exp := res_exp + 1.U
+      //   printf(p"[Stage2-归一化] 左移1位，指数+1=${res_exp + 1.U}\n")
+      // }.elsewhen(res_mant(MUL_WIDTH - 2) === 1.U) {
+      //   normalized_mant := res_mant << 2
+      //   normalized_exp := res_exp
+      //   printf(p"[Stage2-归一化] 左移2位，指数不变=${res_exp}\n")
+      // }.elsewhen(res_mant(MUL_WIDTH - 3) === 1.U) {
+      //   normalized_mant := res_mant << 3
+      //   normalized_exp := res_exp - 1.U
+      //   printf(p"[Stage2-归一化] 左移3位，指数-1=${res_exp - 1.U}\n")
+      // }.elsewhen(res_mant(MUL_WIDTH - 4) === 1.U) {
+      //   normalized_mant := res_mant << 4
+      //   normalized_exp := res_exp - 2.U
+      //   printf(p"[Stage2-归一化] 左移4位，指数-2=${res_exp - 2.U}\n")
+      // }.elsewhen(res_mant(MUL_WIDTH - 5) === 1.U) {
+      //   normalized_mant := res_mant << 5
+      //   normalized_exp := res_exp - 3.U
+      //   printf(p"[Stage2-归一化] 左移5位，指数-3=${res_exp - 3.U}\n")
+      // }.elsewhen(res_mant(MUL_WIDTH - 6) === 1.U) {
+      //   normalized_mant := res_mant << 6
+      //   normalized_exp := res_exp - 4.U
+      //   printf(p"[Stage2-归一化] 左移6位，指数-4=${res_exp - 4.U}\n")
+      // }.elsewhen(res_mant(MUL_WIDTH - 7) === 1.U) {
+      //   normalized_mant := res_mant << 7
+      //   normalized_exp := res_exp - 5.U
+      //   printf(p"[Stage2-归一化] 左移7位，指数-5=${res_exp - 5.U}\n")
+      // }.elsewhen(res_mant(MUL_WIDTH - 8) === 1.U) {
+      //   normalized_mant := res_mant << 8
+      //   normalized_exp := res_exp - 6.U
+      //   printf(p"[Stage2-归一化] 左移8位，指数-6=${res_exp - 6.U}\n")
+      // }.elsewhen(res_mant(MUL_WIDTH - 9) === 1.U) {
+      //   normalized_mant := res_mant << 9
+      //   normalized_exp := res_exp - 7.U
+      //   printf(p"[Stage2-归一化] 左移9位，指数-7=${res_exp - 7.U}\n")
+      // }.elsewhen(res_mant(MUL_WIDTH - 10) === 0.U) {
+      //   normalized_mant := res_mant << 10
+      //   normalized_exp := res_exp - 8.U
+      //   printf(p"[Stage2-归一化] 左移10位，指数-8=${res_exp - 8.U}\n")
+      // }.otherwise {
+      //   normalized_mant := res_mant
+      //   normalized_exp := res_exp
+      //   printf(p"[Stage2-归一化] 无需左移，指数不变=${res_exp}\n")
+      // }
+      val leadingZeros = PriorityEncoder(Reverse(stage1.mul_mant))// 前导零个数
+      // val leadingOne = (MUL_WIDTH - 1).U - leadingZeros // 最高位1的位置
+      // val shiftAmount = (MUL_WIDTH - 1).U - leadingOne + 1.U// 需要左移的位数
+      val shiftAmount = leadingZeros + 1.U
+
+      normalized_mant := stage1.mul_mant << shiftAmount
+      normalized_exp := (stage1.mul_exp + 2.U) - shiftAmount
+
+      printf(
+        p"[Stage2-归一化] 前导零数量=${leadingZeros}, 左移${shiftAmount}位, 指数调整=${normalized_exp}\n"
+      )
     }
 
-    stage2.mul_mant := normalized_mant(MUL_WIDTH - 1, MUL_WIDTH - MANT_WIDTH)
-    stage2.mul_sign := stage1.mul_sign
-    stage2.mul_exp := normalized_exp(EXP_WIDTH - 1, 0)
     stage2.psum := stage1.psum
     stage2.mul_out := Cat(
       stage1.mul_sign,
       normalized_exp(EXP_WIDTH - 1, 0),
       normalized_mant(MUL_WIDTH - 1, MUL_WIDTH - MANT_WIDTH)
     )
-
     printf(
-      p"[Stage2-输出] 乘法结果符号=${stage2.mul_sign}, 乘法结果指数=${stage2.mul_exp}, 乘法结果尾数=${stage2.mul_mant}\n"
+      p"[Stage2-输出] 乘法结果符号=${stage1.mul_sign}, 乘法结果指数=${normalized_exp(EXP_WIDTH - 1, 0)}, 乘法结果尾数=${normalized_mant(MUL_WIDTH - 1, MUL_WIDTH - MANT_WIDTH)}\n"
     )
     printf(p"[Stage2-输出] 完整乘法结果=${stage2.mul_out}\n")
 
@@ -1393,9 +1397,6 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
 
   // Stage3: 加法对齐
   val stage3 = Reg(new Bundle {
-    // val a_is_zero = Bool()
-    // val b_is_zero = Bool()
-    // val same_exp_diff_sign = Bool()
     val mul_mant = UInt((MANT_WIDTH + 1).W)
     val psum_mant = UInt((MANT_WIDTH + 1).W)
     val common_exp = UInt(FULL_EXP.W)
@@ -1423,15 +1424,8 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
       p"[Stage3-解析] psum: 符号=${psum_sign}, 指数=${psum_exp}, 尾数=${psum_mant}\n"
     )
 
-    // stage3.a_is_zero := a_is_zero
-    // stage3.b_is_zero := b_is_zero
-    // stage3.same_exp_diff_sign := same_exp_diff_sign
     stage3.mul_out := stage2.mul_out
     stage3.psum := stage2.psum
-    // when(a_is_zero || b_is_zero || same_exp_diff_sign) {
-    //   // 特殊情况在下一阶段处理
-    // }.otherwise {
-    // 指数对齐
     when(mul_exp >= psum_exp) {
       val shift = mul_exp - psum_exp
       stage3.psum_mant := psum_mant >> shift
@@ -1455,8 +1449,6 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
       )
     }
 
-    // }
-
     stage3.valid := true.B
   }.otherwise {
     stage3.valid := false.B
@@ -1464,9 +1456,6 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
 
   // Stage4: 加法计算
   val stage4 = Reg(new Bundle {
-    // val a_is_zero = Bool()
-    // val b_is_zero = Bool()
-    // val same_exp_diff_sign = Bool()
     val sign = Bool()
     val exp = UInt(FULL_EXP.W)
     val mant = UInt((MANT_WIDTH + 1).W)
@@ -1477,21 +1466,14 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
 
   // Stage4逻辑：加法计算
   when(stage3.valid) {
-
     // 添加调试打印 - Stage4输入
-    // printf(p"[Stage4-输入] 乘法符号=${a_sign}, psum符号=${b_sign}\n")
-    // printf(
-    //   p"[Stage4-输入] 对齐后乘法尾数=${stage3.mul_mant}, 对齐后psum尾数=${stage3.psum_mant}, 公共指数=${stage3.common_exp}\n"
-    // )
-    // stage4.a_is_zero := stage3.a_is_zero
-    // stage4.b_is_zero := stage3.b_is_zero
-    // stage4.same_exp_diff_sign := stage3.same_exp_diff_sign
+    printf(
+      p"[Stage4-输入] 对齐后乘法尾数=${stage3.mul_mant}, 对齐后psum尾数=${stage3.psum_mant}, 公共指数=${stage3.common_exp}\n"
+    )
+
     stage4.mul_out := stage3.mul_out
     stage4.psum := stage3.psum
 
-    // when(stage3.a_is_zero || stage3.b_is_zero || stage3.same_exp_diff_sign) {
-    //   // 特殊情况在下一阶段处理
-    // }.otherwise {
     val a_sign = stage3.mul_out(TOTAL_WIDTH - 1)
     val b_sign = stage3.psum(TOTAL_WIDTH - 1)
 
@@ -1500,7 +1482,6 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
       val sum_fraction =
         Cat(0.U(1.W), stage3.mul_mant) + Cat(0.U(1.W), stage3.psum_mant)
       val cout = sum_fraction(MANT_WIDTH + 1)
-
       // 如果有进位，需要右移一位并增加指数
       when(cout) {
         stage4.mant := sum_fraction(MANT_WIDTH + 1, 1)
@@ -1545,69 +1526,74 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
         abs_result := sub_result(MANT_WIDTH, 0)
         printf(p"[Stage4-计算] 无借位，结果尾数=${abs_result}\n")
       }
-
       // 归一化处理 - 逐位检查
-      when(abs_result(MANT_WIDTH) === 0.U) {
-        // 需要左移归一化
-        when(abs_result(MANT_WIDTH - 1) === 1.U) {
-          stage4.mant := abs_result << 1
-          stage4.exp := stage3.common_exp - 1.U
-          printf(p"[Stage4-归一化] 左移1位，新指数=${stage3.common_exp - 1.U}\n")
-        }.elsewhen(abs_result(MANT_WIDTH - 2) === 1.U) {
-          stage4.mant := abs_result << 2
-          stage4.exp := stage3.common_exp - 2.U
-          printf(p"[Stage4-归一化] 左移2位，新指数=${stage3.common_exp - 2.U}\n")
-        }.elsewhen(abs_result(MANT_WIDTH - 3) === 1.U) {
-          stage4.mant := abs_result << 3
-          stage4.exp := stage3.common_exp - 3.U
-          printf(p"[Stage4-归一化] 左移3位，新指数=${stage3.common_exp - 3.U}\n")
-        }.elsewhen(abs_result(MANT_WIDTH - 4) === 1.U) {
-          stage4.mant := abs_result << 4
-          stage4.exp := stage3.common_exp - 4.U
-          printf(p"[Stage4-归一化] 左移4位，新指数=${stage3.common_exp - 4.U}\n")
-        }.elsewhen(abs_result(MANT_WIDTH - 5) === 1.U) {
-          stage4.mant := abs_result << 5
-          stage4.exp := stage3.common_exp - 5.U
-          printf(p"[Stage4-归一化] 左移5位，新指数=${stage3.common_exp - 5.U}\n")
-        }.elsewhen(abs_result(MANT_WIDTH - 6) === 1.U) {
-          stage4.mant := abs_result << 6
-          stage4.exp := stage3.common_exp - 6.U
-          printf(p"[Stage4-归一化] 左移6位，新指数=${stage3.common_exp - 6.U}\n")
-        }.elsewhen(abs_result(MANT_WIDTH - 7) === 1.U) {
-          stage4.mant := abs_result << 7
-          stage4.exp := stage3.common_exp - 7.U
-          printf(p"[Stage4-归一化] 左移7位，新指数=${stage3.common_exp - 7.U}\n")
-        }.elsewhen(abs_result(MANT_WIDTH - 8) === 1.U) {
-          stage4.mant := abs_result << 8
-          stage4.exp := stage3.common_exp - 8.U
-          printf(p"[Stage4-归一化] 左移8位，新指数=${stage3.common_exp - 8.U}\n")
-        }.elsewhen(abs_result(MANT_WIDTH - 9) === 1.U) {
-          stage4.mant := abs_result << 9
-          stage4.exp := stage3.common_exp - 9.U
-          printf(p"[Stage4-归一化] 左移9位，新指数=${stage3.common_exp - 9.U}\n")
-        }.elsewhen(abs_result(0) === 1.U) {
-          stage4.mant := abs_result << 10
-          stage4.exp := stage3.common_exp - 10.U
-          printf(p"[Stage4-归一化] 左移10位，新指数=${stage3.common_exp - 10.U}\n")
-        }.otherwise {
-          // 结果为零
-          stage4.mant := 0.U
-          stage4.exp := 0.U
-          stage4.sign := false.B
-          printf(p"[Stage4-归一化] 结果为零\n")
-        }
-      }.otherwise {
-        // 已经归一化
-        stage4.mant := abs_result
-        stage4.exp := stage3.common_exp
-        printf(p"[Stage4-归一化] 无需归一化\n")
-      }
+      // when(abs_result(MANT_WIDTH) === 0.U) {
+      //   // 需要左移归一化
+      //   when(abs_result(MANT_WIDTH - 1) === 1.U) {
+      //     stage4.mant := abs_result << 1
+      //     stage4.exp := stage3.common_exp - 1.U
+      //     printf(p"[Stage4-归一化] 左移1位，新指数=${stage3.common_exp - 1.U}\n")
+      //   }.elsewhen(abs_result(MANT_WIDTH - 2) === 1.U) {
+      //     stage4.mant := abs_result << 2
+      //     stage4.exp := stage3.common_exp - 2.U
+      //     printf(p"[Stage4-归一化] 左移2位，新指数=${stage3.common_exp - 2.U}\n")
+      //   }.elsewhen(abs_result(MANT_WIDTH - 3) === 1.U) {
+      //     stage4.mant := abs_result << 3
+      //     stage4.exp := stage3.common_exp - 3.U
+      //     printf(p"[Stage4-归一化] 左移3位，新指数=${stage3.common_exp - 3.U}\n")
+      //   }.elsewhen(abs_result(MANT_WIDTH - 4) === 1.U) {
+      //     stage4.mant := abs_result << 4
+      //     stage4.exp := stage3.common_exp - 4.U
+      //     printf(p"[Stage4-归一化] 左移4位，新指数=${stage3.common_exp - 4.U}\n")
+      //   }.elsewhen(abs_result(MANT_WIDTH - 5) === 1.U) {
+      //     stage4.mant := abs_result << 5
+      //     stage4.exp := stage3.common_exp - 5.U
+      //     printf(p"[Stage4-归一化] 左移5位，新指数=${stage3.common_exp - 5.U}\n")
+      //   }.elsewhen(abs_result(MANT_WIDTH - 6) === 1.U) {
+      //     stage4.mant := abs_result << 6
+      //     stage4.exp := stage3.common_exp - 6.U
+      //     printf(p"[Stage4-归一化] 左移6位，新指数=${stage3.common_exp - 6.U}\n")
+      //   }.elsewhen(abs_result(MANT_WIDTH - 7) === 1.U) {
+      //     stage4.mant := abs_result << 7
+      //     stage4.exp := stage3.common_exp - 7.U
+      //     printf(p"[Stage4-归一化] 左移7位，新指数=${stage3.common_exp - 7.U}\n")
+      //   }.elsewhen(abs_result(MANT_WIDTH - 8) === 1.U) {
+      //     stage4.mant := abs_result << 8
+      //     stage4.exp := stage3.common_exp - 8.U
+      //     printf(p"[Stage4-归一化] 左移8位，新指数=${stage3.common_exp - 8.U}\n")
+      //   }.elsewhen(abs_result(MANT_WIDTH - 9) === 1.U) {
+      //     stage4.mant := abs_result << 9
+      //     stage4.exp := stage3.common_exp - 9.U
+      //     printf(p"[Stage4-归一化] 左移9位，新指数=${stage3.common_exp - 9.U}\n")
+      //   }.elsewhen(abs_result(0) === 1.U) {
+      //     stage4.mant := abs_result << 10
+      //     stage4.exp := stage3.common_exp - 10.U
+      //     printf(p"[Stage4-归一化] 左移10位，新指数=${stage3.common_exp - 10.U}\n")
+      //   }.otherwise {
+      //     // 结果为零
+      //     stage4.mant := 0.U
+      //     stage4.exp := 0.U
+      //     stage4.sign := false.B
+      //     printf(p"[Stage4-归一化] 结果为零\n")
+      //   }
+      // }.otherwise {
+      //   // 已经归一化
+      //   stage4.mant := abs_result
+      //   stage4.exp := stage3.common_exp
+      //   printf(p"[Stage4-归一化] 无需归一化\n")
+      // }
+      val leadingZeros = PriorityEncoder(Reverse(abs_result))
+      val shiftAmount = leadingZeros
+      stage4.mant := abs_result << shiftAmount
+      stage4.exp := stage3.common_exp - shiftAmount
+      printf(
+        p"[Stage4-归一化] 前导零数量=${leadingZeros}, 左移${shiftAmount}位, 指数调整=${stage4.exp}\n"
+      )
     }
 
     printf(
       p"[Stage4-输出] 符号=${stage4.sign}, 指数=${stage4.exp}, 完整尾数=${stage4.mant}\n"
     )
-    // }
 
     stage4.valid := true.B
   }.otherwise {
@@ -1633,25 +1619,20 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
       // A为零，结果为B
       stage5.out := stage4.psum
       printf(p"[Stage5-输出] A为零，结果为B: ${stage4.psum}\n")
-
     }.elsewhen(b_is_zero) {
       // B为零，结果为A
       stage5.out := stage4.mul_out
       printf(p"[Stage5-输出] B为零，结果为A: ${stage4.mul_out}\n")
-
     }.elsewhen(same_exp_diff_sign) {
       // 相同指数不同符号，结果为零
       stage5.out := 0.U
       printf(p"[Stage5-输出] 相同指数不同符号，结果为零\n")
-
     }.otherwise {
       // 检查指数是否为零或下溢
       when(stage4.exp(EXP_WIDTH)) {
         // 指数下溢，结果为0
         stage5.out := 0.U
-
         printf(p"[FPADD-输出] 指数下溢，结果为零\n")
-
       }.otherwise {
         // 正常情况，组装结果
         val final_mantissa = stage4.mant(MANT_WIDTH - 1, 0)
@@ -1667,25 +1648,6 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
 
       }
     }
-
-    // // 添加调试打印 - Stage5输入
-    // printf(
-    //   p"[Stage5-输入] 符号=${stage4.sign}, 指数=${stage4.exp}, 尾数=${stage4.mant}\n"
-    // )
-
-    // val final_exp = Mux(stage4.exp < BIAS.U, 0.U, stage4.exp - BIAS.U)
-    // val final_mant = stage4.mant(MANT_WIDTH - 1, 0) // 舍入处理简化
-
-    // printf(
-    //   p"[Stage5-转换] 原始指数=${stage4.exp}, 减去偏置=${stage4.exp - BIAS.U}, 最终指数=${final_exp}\n"
-    // )
-    // printf(p"[Stage5-转换] 原始尾数=${stage4.mant}, 最终尾数(无隐含位)=${final_mant}\n")
-
-    // stage5.out := Cat(stage4.sign, final_exp(EXP_WIDTH - 1, 0), final_mant)
-    // printf(
-    //   p"[Stage5-输出] 最终结果=${Cat(stage4.sign, final_exp(EXP_WIDTH - 1, 0), final_mant)}\n"
-    // )
-
     stage5.valid := true.B
   }.otherwise {
     stage5.valid := false.B
