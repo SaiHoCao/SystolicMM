@@ -104,7 +104,7 @@ class FPMACTest
   }
 
   it should "correctly perform FP16 MAC operation" in {
-    test(new FPMAC(useHalf = true)) { c =>
+    test(new FPMACs2(useHalf = true)) { c =>
       // 测试用例
       val testCases = Seq(
         (1.0f, 2.0f, 0.0f, 2.0f),       // 基本乘加

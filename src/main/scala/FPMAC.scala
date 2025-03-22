@@ -313,7 +313,6 @@ class FPMUL(val useHalf: Boolean = false) extends Module {
     io.sign_out := stage2.mul_sign
     io.exp_out := stage2.mul_exp
     io.mant_out := stage2.mul_mant
-    // io.out := Cat(stage2.mul_sign, stage2.mul_exp, stage2.mul_mant)
     io.out := stage2.mul_out
     io.valid_out := stage2.valid
   }
@@ -1376,7 +1375,11 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
     stage2.mul_sign := stage1.mul_sign
     stage2.mul_exp := normalized_exp(EXP_WIDTH - 1, 0)
     stage2.psum := stage1.psum
-    stage2.mul_out := Cat(stage2.mul_sign, stage2.mul_exp, stage2.mul_mant)
+    stage2.mul_out := Cat(
+      stage1.mul_sign,
+      normalized_exp(EXP_WIDTH - 1, 0),
+      normalized_mant(MUL_WIDTH - 1, MUL_WIDTH - MANT_WIDTH)
+    )
 
     printf(
       p"[Stage2-输出] 乘法结果符号=${stage2.mul_sign}, 乘法结果指数=${stage2.mul_exp}, 乘法结果尾数=${stage2.mul_mant}\n"
@@ -1390,6 +1393,9 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
 
   // Stage3: 加法对齐
   val stage3 = Reg(new Bundle {
+    // val a_is_zero = Bool()
+    // val b_is_zero = Bool()
+    // val same_exp_diff_sign = Bool()
     val mul_mant = UInt((MANT_WIDTH + 1).W)
     val psum_mant = UInt((MANT_WIDTH + 1).W)
     val common_exp = UInt(FULL_EXP.W)
@@ -1402,6 +1408,11 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
   when(stage2.valid) {
     val (mul_sign, mul_exp, mul_mant) = decodeFP(stage2.mul_out)
     val (psum_sign, psum_exp, psum_mant) = decodeFP(stage2.psum)
+    val a_is_zero = (mul_exp === 0.U) && (mul_mant(MANT_WIDTH - 1, 0) === 0.U)
+    val b_is_zero = (psum_exp === 0.U) && (psum_mant(MANT_WIDTH - 1, 0) === 0.U)
+    val same_exp_diff_sign =
+      (mul_exp === psum_exp) && (mul_mant === psum_mant) && (mul_sign =/= psum_sign)
+
     val exp_ext = UInt((EXP_WIDTH + 1).W)
     val man_ext = UInt((MANT_WIDTH + 1).W)
 
@@ -1412,8 +1423,14 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
       p"[Stage3-解析] psum: 符号=${psum_sign}, 指数=${psum_exp}, 尾数=${psum_mant}\n"
     )
 
+    // stage3.a_is_zero := a_is_zero
+    // stage3.b_is_zero := b_is_zero
+    // stage3.same_exp_diff_sign := same_exp_diff_sign
     stage3.mul_out := stage2.mul_out
     stage3.psum := stage2.psum
+    // when(a_is_zero || b_is_zero || same_exp_diff_sign) {
+    //   // 特殊情况在下一阶段处理
+    // }.otherwise {
     // 指数对齐
     when(mul_exp >= psum_exp) {
       val shift = mul_exp - psum_exp
@@ -1438,6 +1455,8 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
       )
     }
 
+    // }
+
     stage3.valid := true.B
   }.otherwise {
     stage3.valid := false.B
@@ -1445,6 +1464,9 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
 
   // Stage4: 加法计算
   val stage4 = Reg(new Bundle {
+    // val a_is_zero = Bool()
+    // val b_is_zero = Bool()
+    // val same_exp_diff_sign = Bool()
     val sign = Bool()
     val exp = UInt(FULL_EXP.W)
     val mant = UInt((MANT_WIDTH + 1).W)
@@ -1455,17 +1477,23 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
 
   // Stage4逻辑：加法计算
   when(stage3.valid) {
-    val a_sign = stage3.mul_out(TOTAL_WIDTH - 1)
-    val b_sign = stage3.psum(TOTAL_WIDTH - 1)
 
     // 添加调试打印 - Stage4输入
-    printf(p"[Stage4-输入] 乘法符号=${a_sign}, psum符号=${b_sign}\n")
-    printf(
-      p"[Stage4-输入] 对齐后乘法尾数=${stage3.mul_mant}, 对齐后psum尾数=${stage3.psum_mant}, 公共指数=${stage3.common_exp}\n"
-    )
-
+    // printf(p"[Stage4-输入] 乘法符号=${a_sign}, psum符号=${b_sign}\n")
+    // printf(
+    //   p"[Stage4-输入] 对齐后乘法尾数=${stage3.mul_mant}, 对齐后psum尾数=${stage3.psum_mant}, 公共指数=${stage3.common_exp}\n"
+    // )
+    // stage4.a_is_zero := stage3.a_is_zero
+    // stage4.b_is_zero := stage3.b_is_zero
+    // stage4.same_exp_diff_sign := stage3.same_exp_diff_sign
     stage4.mul_out := stage3.mul_out
     stage4.psum := stage3.psum
+
+    // when(stage3.a_is_zero || stage3.b_is_zero || stage3.same_exp_diff_sign) {
+    //   // 特殊情况在下一阶段处理
+    // }.otherwise {
+    val a_sign = stage3.mul_out(TOTAL_WIDTH - 1)
+    val b_sign = stage3.psum(TOTAL_WIDTH - 1)
 
     when(a_sign === b_sign) {
       // 同号相加
@@ -1579,6 +1607,8 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
     printf(
       p"[Stage4-输出] 符号=${stage4.sign}, 指数=${stage4.exp}, 完整尾数=${stage4.mant}\n"
     )
+    // }
+
     stage4.valid := true.B
   }.otherwise {
     stage4.valid := false.B
@@ -1592,23 +1622,69 @@ class FPMACs2(val useHalf: Boolean = false) extends Module {
 
   // Stage5逻辑：结果组装
   when(stage4.valid) {
-    // 添加调试打印 - Stage5输入
-    printf(
-      p"[Stage5-输入] 符号=${stage4.sign}, 指数=${stage4.exp}, 尾数=${stage4.mant}\n"
-    )
+    val (mul_sign, mul_exp, mul_mant) = decodeFP(stage4.mul_out)
+    val (psum_sign, psum_exp, psum_mant) = decodeFP(stage4.psum)
+    val a_is_zero = (mul_exp === 0.U) && (mul_mant(MANT_WIDTH - 1, 0) === 0.U)
+    val b_is_zero = (psum_exp === 0.U) && (psum_mant(MANT_WIDTH - 1, 0) === 0.U)
+    val same_exp_diff_sign =
+      (mul_exp === psum_exp) && (mul_mant === psum_mant) && (mul_sign =/= psum_sign)
 
-    val final_exp = Mux(stage4.exp < BIAS.U, 0.U, stage4.exp - BIAS.U)
-    val final_mant = stage4.mant(MANT_WIDTH - 1, 0) // 舍入处理简化
+    when(a_is_zero) {
+      // A为零，结果为B
+      stage5.out := stage4.psum
+      printf(p"[Stage5-输出] A为零，结果为B: ${stage4.psum}\n")
 
-    printf(
-      p"[Stage5-转换] 原始指数=${stage4.exp}, 减去偏置=${stage4.exp - BIAS.U}, 最终指数=${final_exp}\n"
-    )
-    printf(p"[Stage5-转换] 原始尾数=${stage4.mant}, 最终尾数(无隐含位)=${final_mant}\n")
+    }.elsewhen(b_is_zero) {
+      // B为零，结果为A
+      stage5.out := stage4.mul_out
+      printf(p"[Stage5-输出] B为零，结果为A: ${stage4.mul_out}\n")
 
-    stage5.out := Cat(stage4.sign, final_exp(EXP_WIDTH - 1, 0), final_mant)
-    printf(
-      p"[Stage5-输出] 最终结果=${Cat(stage4.sign, final_exp(EXP_WIDTH - 1, 0), final_mant)}\n"
-    )
+    }.elsewhen(same_exp_diff_sign) {
+      // 相同指数不同符号，结果为零
+      stage5.out := 0.U
+      printf(p"[Stage5-输出] 相同指数不同符号，结果为零\n")
+
+    }.otherwise {
+      // 检查指数是否为零或下溢
+      when(stage4.exp(EXP_WIDTH)) {
+        // 指数下溢，结果为0
+        stage5.out := 0.U
+
+        printf(p"[FPADD-输出] 指数下溢，结果为零\n")
+
+      }.otherwise {
+        // 正常情况，组装结果
+        val final_mantissa = stage4.mant(MANT_WIDTH - 1, 0)
+        stage5.out := Cat(
+          stage4.sign,
+          stage4.exp(EXP_WIDTH - 1, 0),
+          final_mantissa
+        )
+        printf(
+          p"[FPADD-输出] 最终结果=${Cat(stage4.sign, stage4.exp(EXP_WIDTH - 1, 0), final_mantissa)}, 符号=${stage4.sign}, 指数=${stage4
+              .exp(EXP_WIDTH - 1, 0)}, 尾数=${final_mantissa}\n"
+        )
+
+      }
+    }
+
+    // // 添加调试打印 - Stage5输入
+    // printf(
+    //   p"[Stage5-输入] 符号=${stage4.sign}, 指数=${stage4.exp}, 尾数=${stage4.mant}\n"
+    // )
+
+    // val final_exp = Mux(stage4.exp < BIAS.U, 0.U, stage4.exp - BIAS.U)
+    // val final_mant = stage4.mant(MANT_WIDTH - 1, 0) // 舍入处理简化
+
+    // printf(
+    //   p"[Stage5-转换] 原始指数=${stage4.exp}, 减去偏置=${stage4.exp - BIAS.U}, 最终指数=${final_exp}\n"
+    // )
+    // printf(p"[Stage5-转换] 原始尾数=${stage4.mant}, 最终尾数(无隐含位)=${final_mant}\n")
+
+    // stage5.out := Cat(stage4.sign, final_exp(EXP_WIDTH - 1, 0), final_mant)
+    // printf(
+    //   p"[Stage5-输出] 最终结果=${Cat(stage4.sign, final_exp(EXP_WIDTH - 1, 0), final_mant)}\n"
+    // )
 
     stage5.valid := true.B
   }.otherwise {
