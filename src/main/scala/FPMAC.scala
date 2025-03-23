@@ -1276,16 +1276,16 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
 
     // 添加调试打印 - Stage1输入
     printf(
-      p"[Stage1-输入] input=${io.input}, weight=${io.weight}, psum=${io.psum}\n"
+      p"[Stage1-Input] input=${io.input}, weight=${io.weight}, psum=${io.psum}\n"
     )
-    printf(p"[Stage1-解析] input: 符号=${a_sign}, 指数=${a_exp}, 尾数=${a_mant}\n")
-    printf(p"[Stage1-解析] weight: 符号=${b_sign}, 指数=${b_exp}, 尾数=${b_mant}\n")
+    printf(p"[Stage1-Decode] input: sign=${a_sign}, exponent=${a_exp}, mantissa=${a_mant}\n")
+    printf(p"[Stage1-Decode] weight: sign=${b_sign}, exponent=${b_exp}, mantissa=${b_mant}\n")
 
     // 添加调试打印 - Stage1计算
     printf(
-      p"[Stage1-计算] 输入为0=${a_is_zero}, 权重为0=${b_is_zero}, 乘法为0=${mul_zero}\n"
+      p"[Stage1-Compute] input_is_zero=${a_is_zero}, weight_is_zero=${b_is_zero}, mul_is_zero=${mul_zero}\n"
     )
-    printf(p"[Stage1-计算] 结果符号=${res_sign}, 结果指数=${res_exp}, 结果尾数=${res_mant}\n")
+    printf(p"[Stage1-Compute] result_sign=${res_sign}, result_exponent=${res_exp}, result_mantissa=${res_mant}\n")
 
     stage1.mul_sign := res_sign
     stage1.mul_exp := res_exp
@@ -1311,15 +1311,15 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
 
     // 添加调试打印 - Stage2输入
     printf(
-      p"[Stage2-输入] 乘法符号=${stage1.mul_sign}, 乘法指数=${stage1.mul_exp}, 乘法尾数=${stage1.mul_mant}\n"
+      p"[Stage2-Input] mul_sign=${stage1.mul_sign}, mul_exponent=${stage1.mul_exp}, mul_mantissa=${stage1.mul_mant}\n"
     )
 
     when(stage1.mul_mant === 0.U) { // 处理零
       normalized_exp := 0.U
       normalized_mant := 0.U
-      printf(p"[Stage2-归一化] 尾数为0，结果为0\n")
+      printf(p"[Stage2-Normalization] mantissa is zero, result is zero\n")
     }.otherwise {
-      // val res_mant = stage1.mul_mant
+// val res_mant = stage1.mul_mant
       // val res_exp = stage1.mul_exp
       // when(res_mant(MUL_WIDTH - 1) === 1.U) {
       //   normalized_mant := res_mant << 1
@@ -1367,15 +1367,13 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
       //   printf(p"[Stage2-归一化] 无需左移，指数不变=${res_exp}\n")
       // }
       val leadingZeros = PriorityEncoder(Reverse(stage1.mul_mant))// 前导零个数
-      // val leadingOne = (MUL_WIDTH - 1).U - leadingZeros // 最高位1的位置
-      // val shiftAmount = (MUL_WIDTH - 1).U - leadingOne + 1.U// 需要左移的位数
       val shiftAmount = leadingZeros + 1.U
 
       normalized_mant := stage1.mul_mant << shiftAmount
       normalized_exp := (stage1.mul_exp + 2.U) - shiftAmount
 
       printf(
-        p"[Stage2-归一化] 前导零数量=${leadingZeros}, 左移${shiftAmount}位, 指数调整=${normalized_exp}\n"
+        p"[Stage2-Normalization] leading_zeros=${leadingZeros}, left_shift=${shiftAmount}, adjusted_exponent=${normalized_exp}\n"
       )
     }
 
@@ -1386,9 +1384,9 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
       normalized_mant(MUL_WIDTH - 1, MUL_WIDTH - MANT_WIDTH)
     )
     printf(
-      p"[Stage2-输出] 乘法结果符号=${stage1.mul_sign}, 乘法结果指数=${normalized_exp(EXP_WIDTH - 1, 0)}, 乘法结果尾数=${normalized_mant(MUL_WIDTH - 1, MUL_WIDTH - MANT_WIDTH)}\n"
+      p"[Stage2-Output] mul_result_sign=${stage1.mul_sign}, mul_result_exponent=${normalized_exp(EXP_WIDTH - 1, 0)}, mul_result_mantissa=${normalized_mant(MUL_WIDTH - 1, MUL_WIDTH - MANT_WIDTH)}\n"
     )
-    printf(p"[Stage2-输出] 完整乘法结果=${stage2.mul_out}\n")
+    printf(p"[Stage2-Output] complete_mul_result=${stage2.mul_out}\n")
 
     stage2.valid := true.B
   }.otherwise {
@@ -1418,10 +1416,10 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
     val man_ext = UInt((MANT_WIDTH + 1).W)
 
     // 添加调试打印 - Stage3输入
-    printf(p"[Stage3-输入] 乘法结果=${stage2.mul_out}, psum=${stage2.psum}\n")
-    printf(p"[Stage3-解析] 乘法: 符号=${mul_sign}, 指数=${mul_exp}, 尾数=${mul_mant}\n")
+    printf(p"[Stage3-Input] mul_result=${stage2.mul_out}, psum=${stage2.psum}\n")
+    printf(p"[Stage3-Decode] mul: sign=${mul_sign}, exponent=${mul_exp}, mantissa=${mul_mant}\n")
     printf(
-      p"[Stage3-解析] psum: 符号=${psum_sign}, 指数=${psum_exp}, 尾数=${psum_mant}\n"
+      p"[Stage3-Decode] psum: sign=${psum_sign}, exponent=${psum_exp}, mantissa=${psum_mant}\n"
     )
 
     stage3.mul_out := stage2.mul_out
@@ -1432,9 +1430,9 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
       stage3.mul_mant := mul_mant
       stage3.common_exp := mul_exp
 
-      printf(p"[Stage3-对齐] 乘法指数更大，psum尾数右移${shift}位\n")
+      printf(p"[Stage3-Alignment] mul_exponent is larger, shift psum_mantissa right by ${shift} bits\n")
       printf(
-        p"[Stage3-对齐] 对齐后: 乘法尾数=${mul_mant}, psum尾数=${psum_mant >> shift}, 公共指数=${mul_exp}\n"
+        p"[Stage3-Alignment] after alignment: mul_mantissa=${mul_mant}, psum_mantissa=${psum_mant >> shift}, common_exponent=${mul_exp}\n"
       )
 
     } otherwise {
@@ -1443,9 +1441,9 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
       stage3.psum_mant := psum_mant
       stage3.common_exp := psum_exp
 
-      printf(p"[Stage3-对齐] psum指数更大，乘法尾数右移${shift}位\n")
+      printf(p"[Stage3-Alignment] psum_exponent is larger, shift mul_mantissa right by ${shift} bits\n")
       printf(
-        p"[Stage3-对齐] 对齐后: 乘法尾数=${mul_mant >> shift}, psum尾数=${psum_mant}, 公共指数=${psum_exp}\n"
+        p"[Stage3-Alignment] after alignment: mul_mantissa=${mul_mant >> shift}, psum_mantissa=${psum_mant}, common_exponent=${psum_exp}\n"
       )
     }
 
@@ -1468,7 +1466,7 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
   when(stage3.valid) {
     // 添加调试打印 - Stage4输入
     printf(
-      p"[Stage4-输入] 对齐后乘法尾数=${stage3.mul_mant}, 对齐后psum尾数=${stage3.psum_mant}, 公共指数=${stage3.common_exp}\n"
+      p"[Stage4-Input] aligned_mul_mantissa=${stage3.mul_mant}, aligned_psum_mantissa=${stage3.psum_mant}, common_exponent=${stage3.common_exp}\n"
     )
 
     stage4.mul_out := stage3.mul_out
@@ -1486,15 +1484,15 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
       when(cout) {
         stage4.mant := sum_fraction(MANT_WIDTH + 1, 1)
         stage4.exp := stage3.common_exp + 1.U
-        printf(p"[Stage4-计算] 同号相加有进位，右移一位，新指数=${stage3.common_exp + 1.U}\n")
+        printf(p"[Stage4-Compute] same signs addition with carry, right shift by 1 bit, new exponent=${stage3.common_exp + 1.U}\n")
       }.otherwise {
         stage4.mant := sum_fraction(MANT_WIDTH, 0)
         stage4.exp := stage3.common_exp
-        printf(p"[Stage4-计算] 同号相加无进位\n")
+        printf(p"[Stage4-Compute] same signs addition without carry\n")
       }
 
       stage4.sign := a_sign
-      printf(p"[Stage4-计算] 同号相加，结果符号=${a_sign}, 结果尾数=${sum_fraction}\n")
+      printf(p"[Stage4-Compute] same signs addition, result_sign=${a_sign}, result_mantissa=${sum_fraction}\n")
     }.otherwise {
       // 异号相减
       val sub_a = Cat(0.U(1.W), stage3.mul_mant)
@@ -1506,12 +1504,12 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
         // A为负数，计算B-A
         sub_result := sub_b - sub_a
         cout := sub_result(MANT_WIDTH + 1) // 借位标志
-        printf(p"[Stage4-计算] A为负数，B-A，借位=${cout}, 相减结果=${sub_result}\n")
+        printf(p"[Stage4-Compute] A is negative, B-A, borrow=${cout}, subtraction_result=${sub_result}\n")
       }.otherwise {
         // A为正数，计算A-B
         sub_result := sub_a - sub_b
         cout := sub_result(MANT_WIDTH + 1) // 借位标志
-        printf(p"[Stage4-计算] A为正数，A-B，借位=${cout}, 相减结果=${sub_result}\n")
+        printf(p"[Stage4-Compute] A is positive, A-B, borrow=${cout}, subtraction_result=${sub_result}\n")
       }
 
       // 确定结果符号
@@ -1521,7 +1519,7 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
       val abs_result = Wire(UInt((MANT_WIDTH + 1).W))
       when(cout) {
         abs_result := (~sub_result(MANT_WIDTH, 0)) + 1.U
-        printf(p"[Stage4-计算] 有借位，取补码，结果尾数=${abs_result}\n")
+        printf(p"[Stage4-Compute] with borrow, take two's complement, result_mantissa=${abs_result}\n")
       }.otherwise {
         abs_result := sub_result(MANT_WIDTH, 0)
         printf(p"[Stage4-计算] 无借位，结果尾数=${abs_result}\n")
@@ -1587,12 +1585,12 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
       stage4.mant := abs_result << shiftAmount
       stage4.exp := stage3.common_exp - shiftAmount
       printf(
-        p"[Stage4-归一化] 前导零数量=${leadingZeros}, 左移${shiftAmount}位, 指数调整=${stage4.exp}\n"
+        p"[Stage4-Normalization] leading_zeros=${leadingZeros}, left_shift=${shiftAmount}, adjusted_exponent=${stage4.exp}\n"
       )
     }
 
     printf(
-      p"[Stage4-输出] 符号=${stage4.sign}, 指数=${stage4.exp}, 完整尾数=${stage4.mant}\n"
+      p"[Stage4-Output] sign=${stage4.sign}, exponent=${stage4.exp}, complete_mantissa=${stage4.mant}\n"
     )
 
     stage4.valid := true.B
@@ -1618,21 +1616,21 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
     when(a_is_zero) {
       // A为零，结果为B
       stage5.out := stage4.psum
-      printf(p"[Stage5-输出] A为零，结果为B: ${stage4.psum}\n")
+      printf(p"[Stage5-Output] A is zero, result is B: ${stage4.psum}\n")
     }.elsewhen(b_is_zero) {
       // B为零，结果为A
       stage5.out := stage4.mul_out
-      printf(p"[Stage5-输出] B为零，结果为A: ${stage4.mul_out}\n")
+      printf(p"[Stage5-Output] B is zero, result is A: ${stage4.mul_out}\n")
     }.elsewhen(same_exp_diff_sign) {
       // 相同指数不同符号，结果为零
       stage5.out := 0.U
-      printf(p"[Stage5-输出] 相同指数不同符号，结果为零\n")
+      printf(p"[Stage5-Output] same exponent different signs, result is zero\n")
     }.otherwise {
       // 检查指数是否为零或下溢
       when(stage4.exp(EXP_WIDTH)) {
         // 指数下溢，结果为0
         stage5.out := 0.U
-        printf(p"[FPADD-输出] 指数下溢，结果为零\n")
+        printf(p"[FPADD-Output] exponent underflow, result is zero\n")
       }.otherwise {
         // 正常情况，组装结果
         val final_mantissa = stage4.mant(MANT_WIDTH - 1, 0)
@@ -1642,8 +1640,8 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
           final_mantissa
         )
         printf(
-          p"[FPADD-输出] 最终结果=${Cat(stage4.sign, stage4.exp(EXP_WIDTH - 1, 0), final_mantissa)}, 符号=${stage4.sign}, 指数=${stage4
-              .exp(EXP_WIDTH - 1, 0)}, 尾数=${final_mantissa}\n"
+          p"[FPADD-Output] final_result=${Cat(stage4.sign, stage4.exp(EXP_WIDTH - 1, 0), final_mantissa)}, sign=${stage4.sign}, exponent=${stage4
+              .exp(EXP_WIDTH - 1, 0)}, mantissa=${final_mantissa}\n"
         )
 
       }
@@ -1659,7 +1657,7 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
 
   // 最终输出调试打印
   when(stage5.valid) {
-    printf(p"[输出] 最终结果=${stage5.out}, valid=${stage5.valid}\n")
+    printf(p"[Output] final_result=${stage5.out}, valid=${stage5.valid}\n")
   }
 }
 
