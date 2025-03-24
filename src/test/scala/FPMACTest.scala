@@ -106,7 +106,7 @@ class FPMACTest
 
   it should "correctly perform FP16 MAC operation" in {
     test(new FPMAC_5S(useHalf = true))
-      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation, VerilatorFlags(Seq("-Wno-trigraphs")))) {
+      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) {
         c =>
           // 测试用例
           val testCases = Seq(
