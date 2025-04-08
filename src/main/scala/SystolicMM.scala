@@ -21,7 +21,7 @@ class PEFp(useHalf: Boolean) extends Module {
   })
 
   // 实例化FPMAC
-  val fpmac = Module(new FPMAC(useHalf))
+  val fpmac = Module(new FPMAC_5S(useHalf))
   val res = RegInit(0.U(TOTAL_WIDTH.W)) // 保有的部分和
 
   // 连接FPMAC
@@ -207,3 +207,10 @@ class GEMM(val n: Int, val useHalf: Boolean) extends Module {
     }
   }
 }
+
+// object GEMM extends App {
+//   (new ChiselStage).emitVerilog(
+//     new GEMM(n = 4, useHalf = false),
+//     Array("--target-dir", "generated/gemm")
+//   )
+// }

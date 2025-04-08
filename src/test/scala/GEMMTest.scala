@@ -3,6 +3,7 @@ package fpmac
 import chisel3._
 import chisel3.util._
 import chiseltest._
+import chiseltest.simulator.VerilatorFlags
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.ParallelTestExecution
 
@@ -492,17 +493,21 @@ class GEMMTest
     }
   }
 
-  it should "compute 2x2 matrix multiplication correctly" in {
-    test(new GEMM(2, false)) { c =>
+  it should "compute 4x4 matrix multiplication correctly" in {
+    test(new GEMM(4, false)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { c =>
       // 定义2x2矩阵
       val A = Array(
-        Array(1.0f, 2.0f),
-        Array(3.0f, 4.0f)
+        Array(1.0f, 2.0f, 3.0f, 4.0f),
+        Array(5.0f, 6.0f, 7.0f, 8.0f),
+        Array(9.0f, 10.0f, 11.0f, 12.0f),
+        Array(13.0f, 14.0f, 15.0f, 16.0f)
       )
  
       val B = Array(
-        Array(5.0f, 6.0f),
-        Array(7.0f, 8.0f)
+        Array(5.0f, 6.0f, 7.0f, 8.0f),
+        Array(9.0f, 10.0f, 11.0f, 12.0f),
+        Array(13.0f, 14.0f, 15.0f, 16.0f),
+        Array(17.0f, 18.0f, 19.0f, 20.0f)
       )
 
       // 计算期望结果
