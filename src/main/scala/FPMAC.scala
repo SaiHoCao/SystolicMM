@@ -90,6 +90,7 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
   // 初始化输出
   io.out := 0.U
   io.valid_out := false.B
+  // val done = RegInit(false.B)
 
   // 浮点数解码函数：将32位浮点数分解为符号位、指数位和尾数位
   def decodeFP(data: UInt) = {
@@ -111,6 +112,8 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
   })
 
   when(io.valid_in) {
+    printf(p"io.valid_in: ${io.valid_in}\n")
+    printf(p"stage1.valid: ${stage1.valid}\n")
     // 解码输入数据
     val (a_sign, a_exp, a_mant) = decodeFP(io.input)
     val (b_sign, b_exp, b_mant) = decodeFP(io.weight)
@@ -166,6 +169,7 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
     val normalized_exp = Wire(UInt(FULL_EXP.W)) // 归一化后的指数，EXP_WIDTH + 1
     val normalized_mant = Wire(UInt(MUL_WIDTH.W)) // 归一化后的尾数，2*(MANT_WIDTH + 1)
 
+    printf(p"stage2.valid: ${stage2.valid}\n")
     // 添加调试打印 - Stage2输入
     printf(
       p"[Stage2-Input] mul_sign=${stage1.mul_sign}, mul_exponent=${stage1.mul_exp}, mul_mantissa=${stage1.mul_mant}\n"
@@ -214,8 +218,9 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
     val valid = Bool() // 有效信号
   })
 
-  // Stage3逻辑：加法对齐
+  // Stage3逻辑：加法对齐 
   when(stage2.valid) {
+    printf(p"stage3.valid: ${stage3.valid}\n")
     val (mul_sign, mul_exp, mul_mant) = decodeFP(stage2.mul_out)
     val (psum_sign, psum_exp, psum_mant) = decodeFP(stage2.psum)
     val a_is_zero = (mul_exp === 0.U) && (mul_mant(MANT_WIDTH - 1, 0) === 0.U)
@@ -284,7 +289,7 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
     printf(
       p"[Stage4-Input] aligned_mul_mantissa=${stage3.mul_mant}, aligned_psum_mantissa=${stage3.psum_mant}, common_exponent=${stage3.common_exp}\n"
     )
-
+    printf(p"stage4.valid: ${stage4.valid}\n")
     stage4.mul_out := stage3.mul_out
     stage4.psum := stage3.psum
 
@@ -371,6 +376,7 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
 
   // Stage5逻辑：结果组装
   when(stage4.valid) {
+    printf(p"stage5.valid: ${stage5.valid}\n")
     val (mul_sign, mul_exp, mul_mant) = decodeFP(stage4.mul_out)
     val (psum_sign, psum_exp, psum_mant) = decodeFP(stage4.psum)
     val a_is_zero = (mul_exp === 0.U) && (mul_mant(MANT_WIDTH - 1, 0) === 0.U)
@@ -409,230 +415,19 @@ class FPMAC_5S(val useHalf: Boolean = false) extends Module {
       }
     }
     stage5.valid := true.B
-  }.otherwise {
-    stage5.valid := false.B
-  }
-
-  // 输出连接
-  io.out := stage5.out
-  io.valid_out := stage5.valid
-
-  // 最终输出调试打印
-  when(stage5.valid) {
-    printf(p"[Output] final_result=${stage5.out}, valid=${stage5.valid}\n")
-  }
-}
-
-// not pass
-class FPMAC3(val useHalf: Boolean = false) extends Module {
-  // 参数化配置
-  val TOTAL_WIDTH = if (useHalf) 16 else 32
-  val EXP_WIDTH = if (useHalf) 5 else 8
-  val MANT_WIDTH = if (useHalf) 10 else 23
-  val BIAS = if (useHalf) 15 else 127
-
-  // 中间位宽定义
-  val FULL_MANT = MANT_WIDTH + 1 // 含隐含位
-  val MUL_WIDTH = 2 * FULL_MANT // 乘法结果位宽
-  val FULL_EXP = EXP_WIDTH + 1 // 用于指数溢出判断
-
-  val io = IO(new Bundle {
-    val input = Input(UInt(TOTAL_WIDTH.W))
-    val weight = Input(UInt(TOTAL_WIDTH.W))
-    val psum = Input(UInt(TOTAL_WIDTH.W))
-    val out = Output(UInt(TOTAL_WIDTH.W))
-    val valid_in = Input(Bool())
-    val valid_out = Output(Bool())
-  })
-
-  // 五段流水线寄存器定义
-  // Stage1: 乘法分解
-  val stage1 = Reg(new Bundle {
-    val mul_sign = Bool()
-    val mul_exp = UInt(FULL_EXP.W)
-    val mul_mant = UInt(MUL_WIDTH.W)
-    val psum = UInt(TOTAL_WIDTH.W)
-    val valid = Bool()
-  })
-
-  // Stage2: 乘法归一化
-  val stage2 = Reg(new Bundle {
-    val mul_sign = Bool()
-    val mul_exp = UInt(EXP_WIDTH.W)
-    val mul_mant = UInt(MANT_WIDTH.W)
-    val psum = UInt(TOTAL_WIDTH.W)
-    val valid = Bool()
-  })
-
-  // Stage3: 加法对齐
-  val stage3 = Reg(new Bundle {
-    val a_sign = Bool()
-    val a_mant = UInt((MANT_WIDTH + 2).W) // 包含进位位
-    val b_sign = Bool()
-    val b_mant = UInt((MANT_WIDTH + 2).W)
-    val common_exp = UInt(FULL_EXP.W)
-    val valid = Bool()
-  })
-
-  // Stage4: 加法计算
-  val stage4 = Reg(new Bundle {
-    val sign = Bool()
-    val exp = UInt(FULL_EXP.W)
-    val mant = UInt((MANT_WIDTH + 2).W)
-    val valid = Bool()
-  })
-
-  // Stage5: 结果组装
-  val stage5 = Reg(new Bundle {
-    val out = UInt(TOTAL_WIDTH.W)
-    val valid = Bool()
-  })
-
-  // 初始化寄存器
-  // stage1.init(0.U.asTypeOf(stage1))
-  // stage2.init(0.U.asTypeOf(stage2))
-  // stage3.init(0.U.asTypeOf(stage3))
-  // stage4.init(0.U.asTypeOf(stage4))
-  // stage5.init(0.U.asTypeOf(stage5))
-
-  // Stage1逻辑：乘法分解
-  def decodeFP(data: UInt) = {
-    val sign = data(TOTAL_WIDTH - 1)
-    val exp = data(TOTAL_WIDTH - 2, MANT_WIDTH)
-    val mant = data(MANT_WIDTH - 1, 0)
-    val full_mant = Cat(1.U(1.W), mant) // 添加隐含位
-    (sign, exp, full_mant)
-  }
-
-  when(io.valid_in) {
-    val (a_sign, a_exp, a_mant) = decodeFP(io.input)
-    val (b_sign, b_exp, b_mant) = decodeFP(io.weight)
-
-    // 检查零
-    val a_is_zero = a_exp === 0.U && a_mant === 0.U
-    val b_is_zero = b_exp === 0.U && b_mant === 0.U
-    val mul_zero = a_is_zero || b_is_zero
-
-    val res_sign = a_sign ^ b_sign
-    val res_exp = Mux(mul_zero, 0.U, a_exp +& b_exp - BIAS.U)
-    val res_mant = Mux(mul_zero, 0.U, a_mant * b_mant)
-
-    stage1.mul_sign := res_sign
-    stage1.mul_exp := res_exp
-    stage1.mul_mant := res_mant
-    stage1.psum := io.psum
-    stage1.valid := true.B
-  }.otherwise {
-    stage1.valid := false.B
-  }
-
-  // Stage2逻辑：乘法归一化
-  when(stage1.valid) {
-    val normalized_exp = Wire(UInt(FULL_EXP.W))
-    val normalized_mant = Wire(UInt(MUL_WIDTH.W))
-
-    when(stage1.mul_mant === 0.U) {
-      normalized_exp := 0.U
-      normalized_mant := 0.U
-    }.otherwise {
-      // 关键修复点：正确计算前导1位置和移位量
-      // val leadingOne =
-      //   (MUL_WIDTH - 1).U - PriorityEncoder(Reverse(stage1.mul_mant))
-      // val shiftAmount = (MUL_WIDTH - 1 - MANT_WIDTH).U - leadingOne // 正确移位量计算
-      val leadingZeros = PriorityEncoder(Reverse(stage1.mul_mant)) // 前导零个数
-      val shiftAmount = leadingZeros + 1.U
-      normalized_exp := stage1.mul_exp + 2.U + shiftAmount
-      normalized_mant := stage1.mul_mant << shiftAmount
-    }
-
-    stage2.mul_sign := stage1.mul_sign
-    stage2.mul_exp := normalized_exp(EXP_WIDTH - 1, 0)
-    stage2.mul_mant := normalized_mant(
-      MUL_WIDTH - 1,
-      MUL_WIDTH - MANT_WIDTH // 保留隐含位后的 MANT_WIDTH 位
-    )
-    stage2.psum := stage1.psum
-    stage2.valid := true.B
-  }.otherwise {
-    stage2.valid := false.B
-  }
-  // Stage3逻辑：加法对齐
-  when(stage2.valid) {
-    val (psum_sign, psum_exp, psum_mant) = decodeFP(stage2.psum)
-    val mul_exp_ext = Cat(0.U(1.W), stage2.mul_exp)
-
-    // 指数对齐
-    val common_exp = Wire(UInt(FULL_EXP.W))
-    val a_mant_aligned = Wire(UInt((MANT_WIDTH + 2).W))
-    val b_mant_aligned = Wire(UInt((MANT_WIDTH + 2).W))
-
-    when(mul_exp_ext >= psum_exp) {
-      val shift = mul_exp_ext - psum_exp
-      common_exp := mul_exp_ext
-      a_mant_aligned := Cat(0.U(2.W), stage2.mul_mant)
-      b_mant_aligned := Cat(0.U(2.W), psum_mant >> shift)
-    }.otherwise {
-      val shift = psum_exp - mul_exp_ext
-      common_exp := psum_exp
-      a_mant_aligned := Cat(0.U(2.W), stage2.mul_mant >> shift)
-      b_mant_aligned := Cat(0.U(2.W), psum_mant)
-    }
-
-    stage3.a_sign := stage2.mul_sign
-    stage3.a_mant := a_mant_aligned.asUInt
-    stage3.b_sign := psum_sign
-    stage3.b_mant := b_mant_aligned.asUInt
-    stage3.common_exp := common_exp
-    stage3.valid := true.B
-  }.otherwise {
-    stage3.valid := false.B
-  }
-  // Stage4逻辑：加法计算
-  when(stage3.valid) {
-    val a_mant = stage3.a_mant.zext
-    val b_mant = stage3.b_mant.zext
-    val sum_mant = Mux(
-      stage3.a_sign === stage3.b_sign,
-      a_mant + b_mant,
-      Mux(a_mant >= b_mant, a_mant - b_mant, b_mant - a_mant)
-    )
-
-    val res_sign = Mux(
-      stage3.a_sign === stage3.b_sign,
-      stage3.a_sign,
-      Mux(a_mant >= b_mant, stage3.a_sign, stage3.b_sign)
-    )
-
-    // 归一化处理
-    val leadingOne = PriorityEncoder(Reverse(sum_mant.asUInt))
-    val normalized_exp = stage3.common_exp +& ((MANT_WIDTH + 2).U - leadingOne)
-    val normalized_mant =
-      (sum_mant.asUInt << ((MANT_WIDTH + 2).U - leadingOne))(
-        MANT_WIDTH + 1,
-        0
-      )
-
-    stage4.sign := res_sign
-    stage4.exp := normalized_exp
-    stage4.mant := normalized_mant
-    stage4.valid := true.B
-  }.otherwise {
     stage4.valid := false.B
-  }
-
-  // Stage5逻辑：结果组装
-  when(stage4.valid) {
-    val final_exp = Mux(stage4.exp < BIAS.U, 0.U, stage4.exp - BIAS.U)
-    val final_mant = stage4.mant(MANT_WIDTH + 1, 2) // 舍入处理简化
-
-    stage5.out := Cat(stage4.sign, final_exp(EXP_WIDTH - 1, 0), final_mant)
-    stage5.valid := true.B
+    stage3.valid := false.B
+    stage2.valid := false.B
+    stage1.valid := false.B
   }.otherwise {
     stage5.valid := false.B
   }
 
   // 输出连接
   io.out := stage5.out
-  io.valid_out := stage5.valid
-
+  io.valid_out := stage5.valid 
+  // 最终输出调试打印
+  // when(stage5.valid) {
+  //   printf(p"[Output] final_result=${stage5.out}, valid=${stage5.valid}\n")
+  // }
 }

@@ -118,36 +118,51 @@ class PEFpTest extends AnyFlatSpec with ChiselScalatestTester with Matchers {
       // 第一组数据：1.0 * 2.0 = 2.0
       val a1 = 0x3f800000L // 1.0
       val b1 = 0x40000000L // 2.0
-      
+
       // 发送第一组数据
-      dut.io.a_in.valid.poke(true.B)
-      dut.io.b_in.valid.poke(true.B)
-      dut.io.a_in.bits.poke(a1.U)
-      dut.io.b_in.bits.poke(b1.U)
-      dut.clock.step()
+      if (dut.io.a_in.ready.peekBoolean() && dut.io.b_in.ready.peekBoolean()) {
+        dut.io.a_in.valid.poke(true.B)
+        dut.io.b_in.valid.poke(true.B)
+        dut.io.a_in.bits.poke(a1.U)
+        dut.io.b_in.bits.poke(b1.U)
+      } else {
+        dut.io.a_in.valid.poke(false.B)
+        dut.io.b_in.valid.poke(false.B)
+      }
 
       // 等待第一次计算完成
       while (!dut.io.out.valid.peek().litToBoolean) {
         dut.clock.step()
       }
+
       dut.io.a_out.ready.poke(true.B)
       dut.io.b_out.ready.poke(true.B)
       dut.io.out.ready.poke(true.B)
-      dut.clock.step()
 
+      dut.io.a_out.valid.expect(true.B)
+      dut.io.b_out.valid.expect(true.B)
+      dut.io.a_out.bits.expect(a1.U)
+      dut.io.b_out.bits.expect(b1.U)
+
+      dut.clock.step()
       // 第二组数据：2.0 * 3.0 = 6.0
       val a2 = 0x40000000L // 2.0
       val b2 = 0x40400000L // 3.0
-      
+
       // 发送第二组数据
-      dut.io.a_in.valid.poke(true.B)
-      dut.io.b_in.valid.poke(true.B)
-      dut.io.a_in.bits.poke(a2.U)
-      dut.io.b_in.bits.poke(b2.U)
-      dut.clock.step()
+      if (dut.io.a_in.ready.peekBoolean() && dut.io.b_in.ready.peekBoolean()) {
+        dut.io.a_in.valid.poke(true.B)
+        dut.io.b_in.valid.poke(true.B)
+        dut.io.a_in.bits.poke(a2.U)
+        dut.io.b_in.bits.poke(b2.U)
+      } else {
+        dut.io.a_in.valid.poke(false.B)
+        dut.io.b_in.valid.poke(false.B)
+      }
 
       // 等待第二次计算完成
       while (!dut.io.out.valid.peek().litToBoolean) {
+        println(f"Waiting for second calculation to complete")
         dut.clock.step()
       }
       dut.io.a_out.ready.poke(true.B)
@@ -160,6 +175,11 @@ class PEFpTest extends AnyFlatSpec with ChiselScalatestTester with Matchers {
       // 期望结果应该是 2.0 + 6.0 = 8.0
       // 8.0 的 IEEE 754 表示是 0x41000000
       dut.io.out.bits.expect(0x41000000L.U)
+      dut.io.a_out.valid.expect(true.B)
+      dut.io.b_out.valid.expect(true.B)
+      dut.io.a_out.bits.expect(a2.U)
+      dut.io.b_out.bits.expect(b2.U)
+
     }
   }
 
@@ -174,7 +194,7 @@ class PEFpTest extends AnyFlatSpec with ChiselScalatestTester with Matchers {
       // 第一组数据：1.0 * 2.0 = 2.0
       val a1 = 0x3c00L // 1.0 in half precision
       val b1 = 0x4000L // 2.0 in half precision
-      
+
       // 发送第一组数据
       dut.io.a_in.valid.poke(true.B)
       dut.io.b_in.valid.poke(true.B)
@@ -194,7 +214,7 @@ class PEFpTest extends AnyFlatSpec with ChiselScalatestTester with Matchers {
       // 第二组数据：2.0 * 3.0 = 6.0
       val a2 = 0x4000L // 2.0 in half precision
       val b2 = 0x4200L // 3.0 in half precision
-      
+
       // 发送第二组数据
       dut.io.a_in.valid.poke(true.B)
       dut.io.b_in.valid.poke(true.B)
