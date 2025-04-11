@@ -103,10 +103,10 @@ class PEFp(useHalf: Boolean) extends Module {
   }
 
   // 打印调试信息
-  // printf(
-  //   p"[PEFp] - Input: a=0x${Hexadecimal(aReg)}, b=0x${Hexadecimal(bReg)}\n"
-  // )
-  // printf(p"[PEFp] - Output: res=0x${Hexadecimal(res)}\n")
+  printf(
+    p"[PEFp] - Input: a=0x${Hexadecimal(aReg)}, b=0x${Hexadecimal(bReg)}\n"
+  )
+  printf(p"[PEFp] - Output: res=0x${Hexadecimal(res)}\n")
 }
 
 // 脉动阵列矩阵乘法器
@@ -129,12 +129,14 @@ class SystolicMM(val n: Int, val useHalf: Boolean) extends Module {
     // 每个aQueues(i)存储A矩阵的第i行
     aQueues(i).io.enq.valid := io.a_inputs.valid
     aQueues(i).io.enq.bits := io.a_inputs.bits(i)
-    
+
     // 每个bQueues(j)存储B矩阵的第j列（通过矩阵转置实现）
     bQueues(i).io.enq.valid := io.b_inputs.valid
-    bQueues(i).io.enq.bits := VecInit(Seq.tabulate(n)(j => io.b_inputs.bits(j)(i)))
+    bQueues(i).io.enq.bits := VecInit(
+      Seq.tabulate(n)(j => io.b_inputs.bits(j)(i))
+    )
   }
-  
+
   // 只有所有队列都ready时，输入才ready
   io.a_inputs.ready := aQueues.map(_.io.enq.ready).reduce(_ && _)
   io.b_inputs.ready := bQueues.map(_.io.enq.ready).reduce(_ && _)
@@ -146,11 +148,11 @@ class SystolicMM(val n: Int, val useHalf: Boolean) extends Module {
   // 状态寄存器
   val s_idle :: s_computing :: s_done :: Nil = Enum(3)
   val state = RegInit(s_idle)
-  val current_cycle = RegInit(0.U(log2Ceil(n*n).W))
-  
+  val current_cycle = RegInit(0.U(log2Ceil(n * n).W))
+
   // 标记队列的数据消费状态（用于控制波浪式数据传播）
-  val aQueueProgress = RegInit(VecInit(Seq.fill(n)(0.U(log2Ceil(n+1).W))))
-  val bQueueProgress = RegInit(VecInit(Seq.fill(n)(0.U(log2Ceil(n+1).W))))
+  val aQueueProgress = RegInit(VecInit(Seq.fill(n)(0.U(log2Ceil(n + 1).W))))
+  val bQueueProgress = RegInit(VecInit(Seq.fill(n)(0.U(log2Ceil(n + 1).W))))
 
   // 设置所有PE的reset信号
   for (i <- 0 until n) {
@@ -167,51 +169,59 @@ class SystolicMM(val n: Int, val useHalf: Boolean) extends Module {
         // 左上角PE - 直接连接到队列
         val aDeq = Wire(Decoupled(UInt(TOTAL_WIDTH.W)))
         val bDeq = Wire(Decoupled(UInt(TOTAL_WIDTH.W)))
-        
+
         // 使用进度计数器控制数据流动
-        aDeq.valid := aQueues(i).io.deq.valid && (state === s_computing) && 
-                     (aQueueProgress(i) === j.U)
+        aDeq.valid := aQueues(i).io.deq.valid && (state === s_computing) &&
+          (aQueueProgress(i) === j.U)
         aDeq.bits := aQueues(i).io.deq.bits(j)
-        
-        bDeq.valid := bQueues(j).io.deq.valid && (state === s_computing) && 
-                     (bQueueProgress(j) === i.U)
+
+        bDeq.valid := bQueues(j).io.deq.valid && (state === s_computing) &&
+          (bQueueProgress(j) === i.U)
         bDeq.bits := bQueues(j).io.deq.bits(i)
-        
+
         pesIO(i)(j).a_in <> aDeq
         pesIO(i)(j).b_in <> bDeq
-        
+
         // 队列出队控制 - 只有在行/列最后一个元素被消费时才出队
-        aQueues(i).io.deq.ready := aDeq.ready && aDeq.valid && (j.U === (n-1).U)
-        bQueues(j).io.deq.ready := bDeq.ready && bDeq.valid && (i.U === (n-1).U)
+        aQueues(
+          i
+        ).io.deq.ready := aDeq.ready && aDeq.valid && (j.U === (n - 1).U)
+        bQueues(
+          j
+        ).io.deq.ready := bDeq.ready && bDeq.valid && (i.U === (n - 1).U)
       } else if (i == 0) {
         // 第一行其他PE - 等待前一个PE的a_out才启动
-        pesIO(i)(j).a_in <> pesIO(i)(j-1).a_out
-        
+        pesIO(i)(j).a_in <> pesIO(i)(j - 1).a_out
+
         val bDeq = Wire(Decoupled(UInt(TOTAL_WIDTH.W)))
-        bDeq.valid := bQueues(j).io.deq.valid && pesIO(i)(j-1).a_out.valid && 
-                     (bQueueProgress(j) === i.U)
+        bDeq.valid := bQueues(j).io.deq.valid && pesIO(i)(j - 1).a_out.valid &&
+          (bQueueProgress(j) === i.U)
         bDeq.bits := bQueues(j).io.deq.bits(i)
-        
+
         pesIO(i)(j).b_in <> bDeq
-        
+
         // 队列出队控制 - 只有在列的最后一个元素被消费时才出队
-        bQueues(j).io.deq.ready := bDeq.ready && bDeq.valid && (i.U === (n-1).U)
+        bQueues(
+          j
+        ).io.deq.ready := bDeq.ready && bDeq.valid && (i.U === (n - 1).U)
       } else if (j == 0) {
         // 第一列其他PE - 等待上一个PE的b_out才启动
         val aDeq = Wire(Decoupled(UInt(TOTAL_WIDTH.W)))
-        aDeq.valid := aQueues(i).io.deq.valid && pesIO(i-1)(j).b_out.valid && 
-                     (aQueueProgress(i) === j.U)
+        aDeq.valid := aQueues(i).io.deq.valid && pesIO(i - 1)(j).b_out.valid &&
+          (aQueueProgress(i) === j.U)
         aDeq.bits := aQueues(i).io.deq.bits(j)
-        
+
         pesIO(i)(j).a_in <> aDeq
-        pesIO(i)(j).b_in <> pesIO(i-1)(j).b_out
-        
+        pesIO(i)(j).b_in <> pesIO(i - 1)(j).b_out
+
         // 队列出队控制 - 只有在行的最后一个元素被消费时才出队
-        aQueues(i).io.deq.ready := aDeq.ready && aDeq.valid && (j.U === (n-1).U)
+        aQueues(
+          i
+        ).io.deq.ready := aDeq.ready && aDeq.valid && (j.U === (n - 1).U)
       } else {
         // 其他PE - 依赖于前一行和前一列的输出
-        pesIO(i)(j).a_in <> pesIO(i)(j-1).a_out
-        pesIO(i)(j).b_in <> pesIO(i-1)(j).b_out
+        pesIO(i)(j).a_in <> pesIO(i)(j - 1).a_out
+        pesIO(i)(j).b_in <> pesIO(i - 1)(j).b_out
       }
     }
   }
@@ -231,12 +241,12 @@ class SystolicMM(val n: Int, val useHalf: Boolean) extends Module {
   val allPEsDone = peValidSignals.asUInt.andR
 
   // 队列进度更新逻辑
-  when (state === s_computing && allPEsDone) {
+  when(state === s_computing && allPEsDone) {
     for (i <- 0 until n) {
-      when (aQueueProgress(i) < n.U) {
+      when(aQueueProgress(i) < n.U) {
         aQueueProgress(i) := aQueueProgress(i) + 1.U
       }
-      when (bQueueProgress(i) < n.U) {
+      when(bQueueProgress(i) < n.U) {
         bQueueProgress(i) := bQueueProgress(i) + 1.U
       }
     }
@@ -258,7 +268,7 @@ class SystolicMM(val n: Int, val useHalf: Boolean) extends Module {
         // 等待所有队列都有数据
         when(
           aQueues.map(_.io.deq.valid).reduce(_ && _) &&
-          bQueues.map(_.io.deq.valid).reduce(_ && _)
+            bQueues.map(_.io.deq.valid).reduce(_ && _)
         ) {
           state := s_computing
           current_cycle := 0.U
@@ -287,45 +297,63 @@ class OptimizedSystolicMM(val n: Int, val useHalf: Boolean) extends Module {
   val TOTAL_WIDTH = if (useHalf) 16 else 32
 
   val io = IO(new Bundle {
-    val a_inputs = Flipped(Decoupled(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W))))) // 按行输入
-    val b_inputs = Flipped(Decoupled(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W))))) // 按列输入
+    val a_inputs =
+      Flipped(Decoupled(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W))))) // 按行输入
+    val b_inputs =
+      Flipped(Decoupled(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W))))) // 按列输入
     val output_matrix = Decoupled(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W))))
     val reset = Input(Bool())
   })
 
-  //===============================
+  // ===============================
   // 输入队列重构
-  //===============================
+  // ===============================
   // A矩阵行队列（每行一个队列）
-  val aRowQueues = Seq.tabulate(n)(i => 
-    Module(new Queue(UInt(TOTAL_WIDTH.W), entries = 2*n)) // 深度为2倍行宽
+  val aRowQueues = Seq.tabulate(n)(i =>
+    Module(new Queue(UInt(TOTAL_WIDTH.W), entries = 2 * n)) // 深度为2倍行宽
   )
-  
-  // B矩阵列队列（每列一个队列）
-  val bColQueues = Seq.tabulate(n)(j => 
-    Module(new Queue(UInt(TOTAL_WIDTH.W), entries = 2*n))
-    ) // 深度为2倍列高
 
-  // 连接输入到队列
+  // B矩阵列队列（每列一个队列）
+  val bColQueues = Seq.tabulate(n)(j =>
+    Module(new Queue(UInt(TOTAL_WIDTH.W), entries = 2 * n))
+  ) // 深度为2倍列高
+
+  // 连接输入到队列 - 按行输入A矩阵，按列输入B矩阵
   for (i <- 0 until n) {
-    aRowQueues(i).io.enq.bits := io.a_inputs.bits(i)
-    aRowQueues(i).io.enq.valid := io.a_inputs.valid
-  }
-  for (j <- 0 until n) {
-    bColQueues(j).io.enq.bits := io.b_inputs.bits(j)
-    bColQueues(j).io.enq.valid := io.b_inputs.valid
+    // 输入A矩阵的第i行
+    for (j <- 0 until n) {
+      aRowQueues(i).io.enq.bits := io.a_inputs.bits(i)(j)
+      printf(p"[OptimizedSystolicMM] - i: ${i}, j: ${j}, aRowQueues(i).io.enq.bits: ${Hexadecimal(aRowQueues(i).io.enq.bits)}\n")
+      aRowQueues(i).io.enq.valid := io.a_inputs.valid
+    }
+    // 输入B矩阵的第i列
+    for (j <- 0 until n) {
+      bColQueues(i).io.enq.bits := io.b_inputs.bits(j)(i)
+      printf(p"[OptimizedSystolicMM] - i: ${i}, j: ${j}, bColQueues(i).io.enq.bits: ${Hexadecimal(bColQueues(i).io.enq.bits)}\n")
+      bColQueues(i).io.enq.valid := io.b_inputs.valid
+    }
   }
   io.a_inputs.ready := aRowQueues.map(_.io.enq.ready).reduce(_ && _)
   io.b_inputs.ready := bColQueues.map(_.io.enq.ready).reduce(_ && _)
 
-  //===============================
+  // ===============================
   // PE阵列重构
-  //===============================
+  // ===============================
   val peArray = Seq.tabulate(n, n)((i, j) => Module(new PEFp(useHalf)))
 
-  //===============================
+  // 设置所有PE的reset信号
+  for (i <- 0 until n) {
+    for (j <- 0 until n) {
+      peArray(i)(j).io.reset := io.reset
+      peArray(i)(j).io.a_out.ready := true.B
+      peArray(i)(j).io.b_out.ready := true.B
+      peArray(i)(j).io.out.ready := true.B
+    }
+  }
+
+  // ===============================
   // 数据流控制逻辑
-  //===============================
+  // ===============================
   // 行首PE的A输入控制
   for (i <- 0 until n) {
     for (j <- 0 until n) {
@@ -334,16 +362,15 @@ class OptimizedSystolicMM(val n: Int, val useHalf: Boolean) extends Module {
         // 行首PE连接行队列
         peArray(i)(j).io.a_in.valid := aRowQueues(i).io.deq.valid
         peArray(i)(j).io.a_in.bits := aRowQueues(i).io.deq.bits
-        when((i == 0 && j == 0).B) {
+        // 队列出队控制
+        if (i == 0) {
           aRowQueues(i).io.deq.ready := peArray(i)(j).io.a_in.ready
-        }.elsewhen((i > 0).B) {
-          aRowQueues(i).io.deq.ready := peArray(i-1)(j).io.b_out.valid && peArray(i)(j).io.a_in.ready
-        }.otherwise {
-          aRowQueues(i).io.deq.ready := false.B
+        } else {
+          aRowQueues(i).io.deq.ready := peArray(i - 1)(j).io.b_out.valid && peArray(i)(j).io.a_in.ready
         }
       } else {
         // 后续PE连接前一个PE的输出
-        peArray(i)(j).io.a_in <> peArray(i)(j-1).io.a_out
+        peArray(i)(j).io.a_in <> peArray(i)(j - 1).io.a_out
       }
 
       // 垂直方向连接（B数据流）
@@ -351,45 +378,56 @@ class OptimizedSystolicMM(val n: Int, val useHalf: Boolean) extends Module {
         // 列首PE连接列队列
         peArray(i)(j).io.b_in.valid := bColQueues(j).io.deq.valid
         peArray(i)(j).io.b_in.bits := bColQueues(j).io.deq.bits
-        when((i == 0 && j == 0).B) {
+        // 队列出队控制
+        if (j == 0) {
           bColQueues(j).io.deq.ready := peArray(i)(j).io.b_in.ready
-        }.elsewhen((j > 0).B) {
-          bColQueues(j).io.deq.ready := peArray(i)(j-1).io.a_out.valid && peArray(i)(j).io.b_in.ready
+        } else {
+          bColQueues(j).io.deq.ready := peArray(i)(j - 1).io.a_out.valid && peArray(i)(j).io.b_in.ready
         }
       } else {
         // 后续PE连接上一个PE的输出
-        peArray(i)(j).io.b_in <> peArray(i-1)(j).io.b_out
+        peArray(i)(j).io.b_in <> peArray(i - 1)(j).io.b_out
       }
-
     }
   }
 
-  //===============================
+  // ===============================
   // 输出收集逻辑
-  //===============================
+  // ===============================
   val outputBuffer = Reg(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W))))
   val outputValidReg = RegInit(false.B)
+  val computeCycle = RegInit(0.U(log2Ceil(n * n).W))
   
-  // 检测最后一行PE的输出有效性
-  val lastRowValid = VecInit(peArray.last.map(_.io.out.valid)).asUInt.andR
+  // 检测所有PE的输出有效性
+  val allPEsValid = VecInit(for {
+    i <- 0 until n
+    j <- 0 until n
+  } yield peArray(i)(j).io.out.valid).asUInt.andR
   
-  when(lastRowValid && !outputValidReg) {
-    for (i <- 0 until n) {
-      for (j <- 0 until n) {
-        outputBuffer(i)(j) := peArray(i)(j).io.out.bits
+  when(io.reset) {
+    outputValidReg := false.B
+    computeCycle := 0.U
+  }.elsewhen(allPEsValid) {
+    computeCycle := computeCycle + 1.U
+    when(computeCycle === (n * n - 1).U) {
+      outputValidReg := true.B
+      for (i <- 0 until n) {
+        for (j <- 0 until n) {
+          outputBuffer(i)(j) := peArray(i)(j).io.out.bits
+        }
       }
     }
-    outputValidReg := true.B
   }.elsewhen(io.output_matrix.ready && outputValidReg) {
     outputValidReg := false.B
+    computeCycle := 0.U
   }
 
   io.output_matrix.bits := outputBuffer
   io.output_matrix.valid := outputValidReg
 
-  //===============================
+  // ===============================
   // 全局复位逻辑
-  //===============================
+  // ===============================
   when(io.reset) {
     outputValidReg := false.B
     aRowQueues.foreach(_.reset := true.B)
