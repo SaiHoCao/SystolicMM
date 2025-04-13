@@ -181,7 +181,7 @@ class OptimizedSystolicMMTest extends AnyFlatSpec with ChiselScalatestTester wit
   }
 
   it should "compute 2x2 matrix multiplication correctly" in {
-    test(new OptimizedSystolicMM(2, false)) { dut =>
+    test(new OptimizedSystolicMM(2, false)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
       // 准备输入数据
       val a = Array(Array(1.0f, 2.0f), Array(3.0f, 4.0f))
       val b = Array(Array(5.0f, 6.0f), Array(7.0f, 8.0f))

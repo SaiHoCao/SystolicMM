@@ -304,37 +304,47 @@ class OptimizedSystolicMM(val n: Int, val useHalf: Boolean) extends Module {
     val output_matrix = Decoupled(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W))))
     val reset = Input(Bool())
   })
+  val readyReg = RegInit(true.B)
+  io.a_inputs.ready := readyReg
+  io.b_inputs.ready := readyReg
 
   // ===============================
   // 输入队列重构
   // ===============================
-  // A矩阵行队列（每行一个队列）
-  val aRowQueues = Seq.tabulate(n)(i =>
-    Module(new Queue(UInt(TOTAL_WIDTH.W), entries = 2 * n)) // 深度为2倍行宽
-  )
+  // A矩阵行寄存器（每行一个寄存器数组）
+  val aRowRegs =
+    Seq.tabulate(n)(i => RegInit(VecInit(Seq.fill(n)(0.U(TOTAL_WIDTH.W)))))
+  val aRowValid = RegInit(VecInit(Seq.fill(n)(false.B)))
+  val aRowPtr = RegInit(VecInit(Seq.fill(n)(0.U(log2Ceil(n).W))))
 
-  // B矩阵列队列（每列一个队列）
-  val bColQueues = Seq.tabulate(n)(j =>
-    Module(new Queue(UInt(TOTAL_WIDTH.W), entries = 2 * n))
-  ) // 深度为2倍列高
+  // B矩阵列寄存器（每列一个寄存器数组）
+  val bColRegs =
+    Seq.tabulate(n)(j => RegInit(VecInit(Seq.fill(n)(0.U(TOTAL_WIDTH.W)))))
+  val bColValid = RegInit(VecInit(Seq.fill(n)(false.B)))
+  val bColPtr = RegInit(VecInit(Seq.fill(n)(0.U(log2Ceil(n).W))))
 
-  // 连接输入到队列 - 按行输入A矩阵，按列输入B矩阵
+  // 连接输入到寄存器 - 按行输入A矩阵，按列输入B矩阵
   for (i <- 0 until n) {
     // 输入A矩阵的第i行
-    for (j <- 0 until n) {
-      aRowQueues(i).io.enq.bits := io.a_inputs.bits(i)(j)
-      printf(p"[OptimizedSystolicMM] - i: ${i}, j: ${j}, aRowQueues(i).io.enq.bits: ${Hexadecimal(aRowQueues(i).io.enq.bits)}\n")
-      aRowQueues(i).io.enq.valid := io.a_inputs.valid
+    when(io.a_inputs.valid) {
+      for (j <- 0 until n) {
+        aRowRegs(i)(j) := io.a_inputs.bits(i)(j)
+      }
+      aRowValid(i) := true.B
+      aRowPtr(i) := 0.U
+      printf(p"[OptimizedSystolicMM] - A矩阵第${i}行已加载\n")
     }
+
     // 输入B矩阵的第i列
-    for (j <- 0 until n) {
-      bColQueues(i).io.enq.bits := io.b_inputs.bits(j)(i)
-      printf(p"[OptimizedSystolicMM] - i: ${i}, j: ${j}, bColQueues(i).io.enq.bits: ${Hexadecimal(bColQueues(i).io.enq.bits)}\n")
-      bColQueues(i).io.enq.valid := io.b_inputs.valid
+    when(io.b_inputs.valid) {
+      for (j <- 0 until n) {
+        bColRegs(i)(j) := io.b_inputs.bits(j)(i)
+      }
+      bColValid(i) := true.B
+      bColPtr(i) := 0.U
+      printf(p"[OptimizedSystolicMM] - B矩阵第${i}列已加载\n")
     }
   }
-  io.a_inputs.ready := aRowQueues.map(_.io.enq.ready).reduce(_ && _)
-  io.b_inputs.ready := bColQueues.map(_.io.enq.ready).reduce(_ && _)
 
   // ===============================
   // PE阵列重构
@@ -359,14 +369,15 @@ class OptimizedSystolicMM(val n: Int, val useHalf: Boolean) extends Module {
     for (j <- 0 until n) {
       // 水平方向连接（A数据流）
       if (j == 0) {
-        // 行首PE连接行队列
-        peArray(i)(j).io.a_in.valid := aRowQueues(i).io.deq.valid
-        peArray(i)(j).io.a_in.bits := aRowQueues(i).io.deq.bits
-        // 队列出队控制
-        if (i == 0) {
-          aRowQueues(i).io.deq.ready := peArray(i)(j).io.a_in.ready
-        } else {
-          aRowQueues(i).io.deq.ready := peArray(i - 1)(j).io.b_out.valid && peArray(i)(j).io.a_in.ready
+        // 行首PE连接行寄存器
+        peArray(i)(j).io.a_in.valid := aRowValid(i)
+        peArray(i)(j).io.a_in.bits := aRowRegs(i)(aRowPtr(i))
+        // 寄存器指针更新
+        when(peArray(i)(j).io.a_in.ready && aRowValid(i)) {
+          aRowPtr(i) := Mux(aRowPtr(i) === (n - 1).U, 0.U, aRowPtr(i) + 1.U)
+          when(aRowPtr(i) === (n - 1).U) {
+            aRowValid(i) := false.B
+          }
         }
       } else {
         // 后续PE连接前一个PE的输出
@@ -375,14 +386,15 @@ class OptimizedSystolicMM(val n: Int, val useHalf: Boolean) extends Module {
 
       // 垂直方向连接（B数据流）
       if (i == 0) {
-        // 列首PE连接列队列
-        peArray(i)(j).io.b_in.valid := bColQueues(j).io.deq.valid
-        peArray(i)(j).io.b_in.bits := bColQueues(j).io.deq.bits
-        // 队列出队控制
-        if (j == 0) {
-          bColQueues(j).io.deq.ready := peArray(i)(j).io.b_in.ready
-        } else {
-          bColQueues(j).io.deq.ready := peArray(i)(j - 1).io.a_out.valid && peArray(i)(j).io.b_in.ready
+        // 列首PE连接列寄存器
+        peArray(i)(j).io.b_in.valid := bColValid(j)
+        peArray(i)(j).io.b_in.bits := bColRegs(j)(bColPtr(j))
+        // 寄存器指针更新
+        when(peArray(i)(j).io.b_in.ready && bColValid(j)) {
+          bColPtr(j) := Mux(bColPtr(j) === (n - 1).U, 0.U, bColPtr(j) + 1.U)
+          when(bColPtr(j) === (n - 1).U) {
+            bColValid(j) := false.B
+          }
         }
       } else {
         // 后续PE连接上一个PE的输出
@@ -397,13 +409,13 @@ class OptimizedSystolicMM(val n: Int, val useHalf: Boolean) extends Module {
   val outputBuffer = Reg(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W))))
   val outputValidReg = RegInit(false.B)
   val computeCycle = RegInit(0.U(log2Ceil(n * n).W))
-  
+
   // 检测所有PE的输出有效性
   val allPEsValid = VecInit(for {
     i <- 0 until n
     j <- 0 until n
   } yield peArray(i)(j).io.out.valid).asUInt.andR
-  
+
   when(io.reset) {
     outputValidReg := false.B
     computeCycle := 0.U
@@ -430,12 +442,81 @@ class OptimizedSystolicMM(val n: Int, val useHalf: Boolean) extends Module {
   // ===============================
   when(io.reset) {
     outputValidReg := false.B
-    aRowQueues.foreach(_.reset := true.B)
-    bColQueues.foreach(_.reset := true.B)
+    for (i <- 0 until n) {
+      aRowValid(i) := false.B
+      bColValid(i) := false.B
+      aRowPtr(i) := 0.U
+      bColPtr(i) := 0.U
+    }
     peArray.foreach(_.foreach(_.reset := true.B))
   }.otherwise {
-    aRowQueues.foreach(_.reset := false.B)
-    bColQueues.foreach(_.reset := false.B)
     peArray.foreach(_.foreach(_.reset := false.B))
   }
+}
+
+class SystolicMM_2(val n: Int, val useHalf: Boolean) extends Module {
+  val TOTAL_WIDTH = if (useHalf) 16 else 32
+
+  val io = IO(new Bundle {
+    val a_inputs = Flipped(Decoupled(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W)))))
+    val b_inputs = Flipped(Decoupled(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W)))))
+    val output_matrix = Decoupled(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W))))
+    val reset = Input(Bool())
+  })
+
+  val readyReg = RegInit(true.B)
+  io.a_inputs.ready := readyReg
+  io.b_inputs.ready := readyReg
+
+  val dataValid = io.a_inputs.valid && io.b_inputs.valid
+
+  val aReg = RegInit(
+    VecInit(Seq.fill(n)(VecInit(Seq.fill(n)(0.U(TOTAL_WIDTH.W)))))
+  )
+  val bReg = RegInit(
+    VecInit(Seq.fill(n)(VecInit(Seq.fill(n)(0.U(TOTAL_WIDTH.W)))))
+  )
+  val s = Reg(Vec(n, Vec(n, UInt(TOTAL_WIDTH.W))))
+
+  val h_wires =
+    Seq.fill(n - 1)(Seq.fill(n)(Wire(UInt(TOTAL_WIDTH.W)))) // 水平方向的缓存，一行三个，共四行
+  val v_wires =
+    Seq.fill(n)(Seq.fill(n - 1)(Wire(UInt(TOTAL_WIDTH.W)))) // 垂直方向的缓存,一列三个,共四列
+
+  // 数据输入
+  when(dataValid) {
+    for (i <- 0 until n) {
+      for (j <- 0 until n) {
+        aReg(i)(j) := io.a_inputs.bits(i)(j)
+        bReg(i)(j) := io.b_inputs.bits(i)(j)
+      }
+    }
+    readyReg := false.B
+  }
+
+  // PE阵列
+  val peArray = Seq.tabulate(n, n)((i, j) => Module(new PEFp(useHalf)))
+
+  for (row <- 0 until n) {
+    for (col <- 0 until n) {
+      peArray(row)(col).io.reset := io.reset
+      if (row == 0 && col == 0) {
+        peArray(row)(col).io.a_in.valid := true.B
+        peArray(row)(col).io.b_in.valid := true.B
+        peArray(row)(col).io.a_in.bits := aReg(row)(col)
+        peArray(row)(col).io.b_in.bits := bReg(row)(col)
+      } else if (row == 0) {
+        peArray(row)(col).io.a_in <> peArray(row)(col - 1).io.a_out
+        peArray(row)(col).io.b_in <> io.b_inputs.bits(row)(col)
+      } else if (col == 0) {
+        peArray(row)(col).io.a_in <> io.a_inputs.bits(row)(col)
+        peArray(row)(col).io.b_in <> peArray(row - 1)(col).io.b_out
+      } else {
+        peArray(row)(col).io.a_in <> peArray(row)(col - 1).io.a_out
+        peArray(row)(col).io.b_in <> peArray(row - 1)(col).io.b_out
+      }
+    }
+  }
+  
+
 }

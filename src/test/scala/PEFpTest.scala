@@ -239,3 +239,60 @@ class PEFpTest extends AnyFlatSpec with ChiselScalatestTester with Matchers {
     }
   }
 }
+
+class PEFpv2Test extends AnyFlatSpec with ChiselScalatestTester with Matchers {
+  behavior of "PEFpv2"
+
+  it should "perform accumulation correctly" in {
+    test(new PEFpv2(useHalf = false)) { dut =>
+      // 初始化
+      // dut.io.reset.poke(true.B)
+      // dut.clock.step()
+      // dut.io.reset.poke(false.B)
+
+      // 第一组数据：1.0 * 2.0 = 2.0
+      val a1 = 0x3f800000L // 1.0
+      val b1 = 0x40000000L // 2.0
+
+      // 发送第一组数据
+
+      dut.io.a_in.poke(a1.U)
+      dut.io.b_in.poke(b1.U)
+      // dut.clock.step()
+
+      // 等待第一次计算完成
+      while (!dut.io.valid_out.peek().litToBoolean) {
+        dut.clock.step()
+      }
+
+      dut.io.a_out.expect(a1.U)
+      dut.io.b_out.expect(b1.U)
+      dut.io.out.expect(0x40000000L.U)
+
+      dut.clock.step()
+      // 第二组数据：2.0 * 3.0 = 6.0
+      val a2 = 0x40000000L // 2.0
+      val b2 = 0x40400000L // 3.0
+
+      // 发送第二组数据
+      dut.io.a_in.poke(a2.U)
+      dut.io.b_in.poke(b2.U)
+
+      // 等待第二次计算完成
+      while (!dut.io.valid_out.peek().litToBoolean) {
+        println(f"Waiting for second calculation to complete")
+        dut.clock.step()
+      }
+      dut.io.a_out.expect(a2.U)
+      dut.io.b_out.expect(b2.U)
+      // 验证累加结果
+      val result = dut.io.out.peek().litValue
+      println(f"Accumulation Result: 0x$result%X")
+      // 期望结果应该是 2.0 + 6.0 = 8.0
+      // 8.0 的 IEEE 754 表示是 0x41000000
+      dut.io.out.expect(0x41000000L.U)
+
+    }
+  }
+
+}
