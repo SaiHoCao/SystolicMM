@@ -494,27 +494,41 @@ class SystolicMM_2(val n: Int, val useHalf: Boolean) extends Module {
     readyReg := false.B
   }
 
-  // PE阵列
-  val peArray = Seq.tabulate(n, n)((i, j) => Module(new PEFp(useHalf)))
+  val resValid = RegInit(false.B)
+  io.out.valid := resValid
+  io.out.bits := sysmm.io.output_matrix
 
-  for (row <- 0 until n) {
-    for (col <- 0 until n) {
-      peArray(row)(col).io.reset := io.reset
-      if (row == 0 && col == 0) {
-        peArray(row)(col).io.a_in.valid := true.B
-        peArray(row)(col).io.b_in.valid := true.B
-        peArray(row)(col).io.a_in.bits := aReg(row)(col)
-        peArray(row)(col).io.b_in.bits := bReg(row)(col)
-      } else if (row == 0) {
-        peArray(row)(col).io.a_in <> peArray(row)(col - 1).io.a_out
-        peArray(row)(col).io.b_in <> io.b_inputs.bits(row)(col)
-      } else if (col == 0) {
-        peArray(row)(col).io.a_in <> io.a_inputs.bits(row)(col)
-        peArray(row)(col).io.b_in <> peArray(row - 1)(col).io.b_out
-      } else {
-        peArray(row)(col).io.a_in <> peArray(row)(col - 1).io.a_out
-        peArray(row)(col).io.b_in <> peArray(row - 1)(col).io.b_out
+  // 计数器需要考虑FPMAC的5周期延迟和数据流动
+  val cnt = Counter(3 * n + 5)
+  
+  when(busy && computing && cnt.value < (2 * n).U) {
+    for (i <- 0 until n) {
+      val temp = cnt.value >= i.U
+      val p = Mux(temp, cnt.value - i.U, 0.U)
+      when(temp && p < n.U) {
+        sysmm.io.a_inputs(i) := matrixAReg(i)(p(log2Ceil(n) - 1, 0))
+        sysmm.io.b_inputs(i) := matrixBReg(p(log2Ceil(n) - 1, 0))(i)
       }
+    }
+    cnt.inc()
+  }.elsewhen(busy && cnt.value < (3 * n + 4).U) {
+    // 额外的周期用于等待FPMAC完成最后的计算
+    computing := cnt.value < (2 * n).U
+    cnt.inc()
+  }
+
+  // 检测计算完成
+  when(sysmm.io.valid_out&& cnt.value >= (3 * n - 1).U) {
+    print(p"Computation completed!")
+    resValid := true.B
+  }
+
+  when(cnt.value === (3 * n + 4).U) {
+    // 确保所有计算都已完成
+    when(resValid && io.out.ready) {
+      resValid := false.B
+      busy := false.B
+      cnt.reset()
     }
   }
   

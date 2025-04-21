@@ -3,6 +3,7 @@ package fpmac
 import chisel3._
 import chisel3.util._
 import chiseltest._
+import chiseltest.simulator.VerilatorFlags
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.ParallelTestExecution
 import org.scalatest.matchers.should.Matchers
