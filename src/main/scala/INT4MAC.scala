@@ -7,8 +7,8 @@ import chisel3.util._
 class INT4MAC extends Module {
   // 定义位宽
   val INPUT_WIDTH = 4  // input和weight的位宽
-  val PSUM_WIDTH = 16   // psum的位宽
-  val OUTPUT_WIDTH = 16 // 输出位宽
+  val PSUM_WIDTH = 4  // psum的位宽
+  val OUTPUT_WIDTH = 4 // 输出位宽
 
   val io = IO(new Bundle {
     val input = Input(UInt(INPUT_WIDTH.W))
@@ -35,7 +35,9 @@ class INT4MAC extends Module {
     val input_signed = io.input.asSInt
     val weight_signed = io.weight.asSInt
     val mul_signed = input_signed * weight_signed
+    printf(p"[INT4MAC] mul_signed=${mul_signed}\n")
     mul_result := mul_signed.asUInt
+    printf(p"[INT4MAC] mul_result=${mul_result}\n")
     
     // 执行加法 - 转换为有符号数进行加法，然后转回无符号数
     val psum_signed = io.psum.asSInt
@@ -45,6 +47,9 @@ class INT4MAC extends Module {
     // 设置输出
     io.out := add_result
     io.valid_out := true.B
+    printf(p"[INT4MAC] input=${io.input}, weight=${io.weight}, psum=${io.psum}\n")
+    printf(p"[INT4MAC] mul_result=${mul_result}, add_result=${add_result}\n")
+    printf(p"[INT4MAC] final_output=${io.out}\n")
     
     // // 调试打印
     // printf(p"[INT4MAC] input=${io.input}, weight=${io.weight}, psum=${io.psum}\n")

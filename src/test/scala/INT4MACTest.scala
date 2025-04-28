@@ -52,3 +52,44 @@ class INT4MACTester extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 }
+
+class PEInt4Tester extends AnyFlatSpec with ChiselScalatestTester {
+  "INT4MAC" should "correctly perform multiply-accumulate operations" in {
+    test(new PEInt4) { dut =>
+      // 测试用例1: 正数相乘
+      dut.io.a_in.poke(3.U)      // 3
+      dut.io.b_in.poke(2.U)     // 2
+      dut.io.valid_in.poke(true.B)
+      dut.clock.step(2)
+      dut.io.valid_out.expect(true.B)
+      dut.io.out.expect(6.U)   
+      dut.io.a_out.expect(3.U) // 输出a_in
+      dut.io.b_out.expect(2.U) // 输出b_in
+
+      // 测试用例2: 负数相乘
+      dut.io.a_in.poke(0xF.U)    // -1 (补码)
+      dut.io.b_in.poke(0xE.U)   // -2 (补码)
+      dut.io.valid_in.poke(true.B)
+      dut.clock.step(2)
+      dut.io.valid_out.expect(true.B)
+      dut.io.out.expect(8.U)      // (-1)*(-2) + 0 = 2
+      dut.io.a_out.expect(0xF.U) // 输出a_in
+      dut.io.b_out.expect(0xE.U) // 输出b_in
+
+      dut.io.reset.poke(true.B)
+      dut.clock.step(1)
+      dut.io.reset.poke(false.B)
+
+      // 测试用例3: 正负相乘
+      dut.io.a_in.poke(3.U)      // 3
+      dut.io.b_in.poke(1.U)   // 1
+      dut.io.valid_in.poke(true.B)
+      dut.clock.step(2)
+      dut.io.valid_out.expect(true.B)
+      dut.io.out.expect(3.U)      // 
+      dut.io.a_out.expect(3.U) // 输出a_in
+      dut.io.b_out.expect(1.U) // 输出b_in
+
+    }
+  }
+}

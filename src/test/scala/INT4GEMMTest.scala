@@ -8,7 +8,7 @@ import org.scalatest.ParallelTestExecution
 
 class INT4GEMMTester extends AnyFlatSpec with ChiselScalatestTester {
   "INT4GEMM" should "correctly perform 4x4 matrix multiplication" in {
-    test(new INT4GEMM(4, 4)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+    test(new INT4GEMM(4)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
       // 测试用例1: 正数矩阵乘法
       // 矩阵A
       val matrixA = Array(
