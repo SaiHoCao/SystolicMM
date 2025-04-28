@@ -17,8 +17,8 @@ class PEInt4 extends Module {
     val b_out = Output(UInt(INPUT_WIDTH.W))
     val out = Output(UInt(OUTPUT_WIDTH.W))
     // 控制信号
-    val valid_in = Input(Bool())
-    val valid_out = Output(Bool())
+    // val valid_in = Input(Bool())
+    // val valid_out = Output(Bool())
     val reset = Input(Bool())
   })
 
@@ -30,17 +30,17 @@ class PEInt4 extends Module {
   int4mac.io.input := io.a_in
   int4mac.io.weight := io.b_in
   int4mac.io.psum := res
-  int4mac.io.valid_in := io.valid_in
+  // int4mac.io.valid_in := io.valid_in
 
   io.a_out := RegNext(io.a_in) // 将输入数据传递给下一个PE
   io.b_out := RegNext(io.b_in) // 将权重数据传递给下一个PE
-  io.valid_out := int4mac.io.valid_out // 输出有效信号
+  // io.valid_out := int4mac.io.valid_out // 输出有效信号
   // 结果处理
   when(io.reset) {
     res := 0.U
-  }.elsewhen(int4mac.io.valid_out) {
+  }.otherwise {
     res := int4mac.io.out
-    printf(p"PE计算结果: ${res}\n")
+    printf(p"PE out: ${res}\n")
   }
 
   io.out := res
@@ -84,17 +84,17 @@ class INT4SystolicMM(val rows: Int, val cols: Int) extends Module {
       }
 
       // 控制信号连接
-      if (i == 0 && j == 0) {
-        peArray(i)(j).io.valid_in := io.valid_in
-      } else if (i == 0) {
-        peArray(i)(j).io.valid_in := peArray(i)(j - 1).io.valid_out
-      } else if (j == 0) {
-        peArray(i)(j).io.valid_in := peArray(i - 1)(j).io.valid_out
-      } else {
-        peArray(i)(j).io.valid_in := peArray(i - 1)(j).io.valid_out && peArray(
-          i
-        )(j - 1).io.valid_out
-      }
+      // if (i == 0 && j == 0) {
+      //   peArray(i)(j).io.valid_in := io.valid_in
+      // } else if (i == 0) {
+      //   peArray(i)(j).io.valid_in := peArray(i)(j - 1).io.valid_out
+      // } else if (j == 0) {
+      //   peArray(i)(j).io.valid_in := peArray(i - 1)(j).io.valid_out
+      // } else {
+      //   peArray(i)(j).io.valid_in := peArray(i - 1)(j).io.valid_out && peArray(
+      //     i
+      //   )(j - 1).io.valid_out
+      // }
 
       peArray(i)(j).io.reset := io.reset
 
@@ -104,7 +104,7 @@ class INT4SystolicMM(val rows: Int, val cols: Int) extends Module {
   }
 
   // 输出有效信号
-  io.valid_out := peArray(rows - 1)(cols - 1).io.valid_out
+  // io.valid_out := peArray(rows - 1)(cols - 1).io.valid_out
 }
 
 // 完整的GEMM实现
